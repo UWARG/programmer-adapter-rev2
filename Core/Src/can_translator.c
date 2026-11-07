@@ -18,16 +18,28 @@ void CANTranslator_GetStats(CANTranslatorStats_t* out_stats) {
     *out_stats = stats;
 }
 
-uint8_t charToHex(char c) {
+bool charToHex(char c, uint8_t* out_val) {
 	if (c >= '0' && c <= '9') {
-		return (c - '0');
+		*out_val = (uint8_t)(c - '0');
+		return true;
 	} else if (c >= 'A' && c <= 'F') {
-		return ((c - 'A') + 10);
+		*out_val = (uint8_t)((c - 'A') + 10);
+		return true;
 	} else if (c >= 'a' && c <= 'f') {
-		return ((c - 'a') + 10);
+		*out_val = (uint8_t)((c - 'a') + 10);
+		return true;
 	}
 
-	return 0;
+	return false;
+}
+
+bool hextoChar(uint8_t hex, char* out_val) {
+	if (hex > 0xF) {
+		return false;
+	}
+
+	*out_val = hextoCharLUT[hex];
+	return true;
 }
 
 bool SLCANToCAN(CircularBuffer_t* cb, CANQueue_t* canq) {
@@ -44,7 +56,7 @@ bool SLCANToCAN(CircularBuffer_t* cb, CANQueue_t* canq) {
 	while(current_head != cb->tail) {
 
 		if (!CBpop_upto(cb, current_head, &raw_byte)) {
-			break; // Reached snapshot limit
+			break;
 		}
 		char c = (char)raw_byte;
 
@@ -71,14 +83,26 @@ bool SLCANToCAN(CircularBuffer_t* cb, CANQueue_t* canq) {
 
 			uint32_t id = 0;
 
+			uint8_t hex_digit;
+
 			for(int i = 1U; i <= id_length; i++) {
-				id = (id << NUM_OF_BITS_IN_HEX) | charToHex(line_buffer[i]);
+				if(!charToHex(line_buffer[i], &hex_digit)) {
+					stats.invalid_command_headers++;
+					goto parse_error;
+				}
+				id = (id << NUM_OF_BITS_IN_HEX) | hex_digit;
 			}
 
 			can_mssg.id = id;
 
 			uint8_t dlc_index = id_length + 1;
-			uint8_t dlc = charToHex(line_buffer[dlc_index]);
+
+			if(!charToHex(line_buffer[dlc_index], &hex_digit)) {
+				stats.invalid_command_headers++;
+				goto parse_error;
+			}
+
+			uint8_t dlc = hex_digit;
 
 			if(dlc > 8) {
 				index = 0;
@@ -91,8 +115,19 @@ bool SLCANToCAN(CircularBuffer_t* cb, CANQueue_t* canq) {
 			uint8_t payload_start_index = dlc_index + 1;
 
 			for(int i = 0; i < dlc; i++) {
-				uint8_t high_nibble = charToHex(line_buffer[payload_start_index + (i * 2)]);
-				uint8_t low_nibble = charToHex(line_buffer[payload_start_index + ((i * 2) + 1)]);
+				if(!charToHex(line_buffer[payload_start_index + (i * 2)], &hex_digit)) {
+					stats.invalid_command_headers++;
+					goto parse_error;
+				}
+
+				uint8_t high_nibble = hex_digit;
+
+				if(!charToHex(line_buffer[payload_start_index + ((i * 2) + 1)], &hex_digit)) {
+					stats.invalid_command_headers++;
+					goto parse_error;
+				}
+
+				uint8_t low_nibble = hex_digit;
 
 				can_mssg.payload[i] = (high_nibble << NUM_OF_BITS_IN_HEX) | low_nibble;
 			}
@@ -116,5 +151,11 @@ bool SLCANToCAN(CircularBuffer_t* cb, CANQueue_t* canq) {
 	}
 
 	return true;
+
+	parse_error:
+	    index = 0;
+	    return false;
 }
+
+
 
