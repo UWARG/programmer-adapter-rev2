@@ -8,7 +8,8 @@
 #include <can_translator.h>
 
 
-#define NUM_OF_BITS_IN_HEX 4U
+#define NUM_OF_BITS_IN_HEX 		4U
+#define HEX_DIGIT_MASK 			0x0F
 
 
 static CANTranslatorStats_t stats = {0};
@@ -43,21 +44,19 @@ bool hextoChar(uint8_t hex, char* out_val) {
 }
 
 bool SLCANToCAN(CircularBuffer_t* cb, CANQueue_t* canq) {
+	uint32_t current_head = cb->head;
+
 	static char line_buffer[32];
 	static uint8_t index = 0;
 	static bool discard_mode = false;
 
 	uint8_t raw_byte;
 
-	uint32_t current_head = cb->head;
 	CANMessage_t can_mssg;
 	can_mssg.retries = 0;
 
-	while(current_head != cb->tail) {
+	while(CBpop_upto(cb, current_head, &raw_byte)) {
 
-		if (!CBpop_upto(cb, current_head, &raw_byte)) {
-			break;
-		}
 		char c = (char)raw_byte;
 
 		if(c == '\r') {
@@ -132,7 +131,10 @@ bool SLCANToCAN(CircularBuffer_t* cb, CANQueue_t* canq) {
 				can_mssg.payload[i] = (high_nibble << NUM_OF_BITS_IN_HEX) | low_nibble;
 			}
 
-			CANQpush(canq, can_mssg);
+			if(!CANQpush(canq, can_mssg)) {
+				stats.buffer_overflows++;
+				return false;
+			}
 
 			index = 0;
 
@@ -157,5 +159,81 @@ bool SLCANToCAN(CircularBuffer_t* cb, CANQueue_t* canq) {
 	    return false;
 }
 
+bool CANToSLCAN(CircularBuffer_t* cb, CANQueue_t* canq) {
+    uint32_t current_head = canq->head;
+    CANMessage_t raw_can_mssg;
 
+    while (CANQpop_upto(canq, current_head, &raw_can_mssg)) {
+        char ascii_digit;
+        uint8_t id_length;
 
+        if (raw_can_mssg.is_extended) {
+        	if (!CBpush(cb, 'T')) {
+        		stats.buffer_overflows++;
+        		return false;
+        	}
+            id_length = 8;
+        } else {
+        	if (!CBpush(cb, 't')) {
+        		stats.buffer_overflows++;
+        		return false;
+        	}
+            id_length = 3;
+        }
+
+        for (int i = id_length - 1; i >= 0; i--) {
+            uint8_t id_digit = (uint8_t)((raw_can_mssg.id >> (i * NUM_OF_BITS_IN_HEX)) & HEX_DIGIT_MASK);
+
+            if (!hexToChar(id_digit, &ascii_digit)) {
+                stats.invalid_command_headers++;
+                return false;
+            }
+            if (!CBpush((cb, (uint8_t)ascii_digit))) {
+				stats.buffer_overflows++;
+				return false;
+			}
+        }
+
+        if (raw_can_mssg.dlc > 8) {
+            stats.invalid_dlc_errors++;
+            return false;
+        }
+        if (!hexToChar(raw_can_mssg.dlc, &ascii_digit)) {
+            stats.invalid_command_headers++;
+            return false;
+        }
+        if (!CBpush((cb, (uint8_t)ascii_digit))) {
+			stats.buffer_overflows++;
+			return false;
+		}
+
+        for (int i = 0; i < raw_can_mssg.dlc; i++) {
+            uint8_t high_nibble = (raw_can_mssg.payload[i] >> NUM_OF_BITS_IN_HEX) & HEX_DIGIT_MASK;
+            uint8_t low_nibble  = raw_can_mssg.payload[i] & HEX_DIGIT_MASK;
+
+            if (!hexToChar(high_nibble, &ascii_digit)) {
+                stats.invalid_command_headers++;
+                return false;
+            }
+            if (!CBpush((cb, (uint8_t)ascii_digit))) {
+    			stats.buffer_overflows++;
+    			return false;
+    		}
+            if (!hexToChar(low_nibble, &ascii_digit)) {
+                stats.invalid_command_headers++;
+                return false;
+            }
+            if (!CBpush((cb, (uint8_t)ascii_digit))) {
+    			stats.buffer_overflows++;
+    			return false;
+    		}
+        }
+
+        if (!CBpush((cb, '\r'))) {
+			stats.buffer_overflows++;
+			return false;
+		}
+    }
+
+    return true;
+}
