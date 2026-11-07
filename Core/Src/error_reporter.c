@@ -6,7 +6,7 @@
 static volatile int error;
 static volatile int warnings[16];
 
-void error_reporter_report_error(int error_code)
+void report_error(int error_code)
 {
     // Prevent main and other maskable interrupts from changing the stored data
     // or interrupting this fatal-error workflow. This path never restores them.
@@ -27,7 +27,7 @@ void error_reporter_report_error(int error_code)
     }
 }
 
-void error_reporter_report_warning(int warning_code)
+void report_warning(int warning_code)
 {
     if (warning_code == 0) {
         return; // Zero marks an unused entry.

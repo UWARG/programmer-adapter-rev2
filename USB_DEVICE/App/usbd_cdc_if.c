@@ -264,13 +264,14 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 6 */
   // if buffer gets fille bytes will get dropped
+  const int usb_buffer_overflow = 1;
   bool pushed = true;
   for (uint32_t i = 0; i < *Len && pushed; i++) {
     pushed = CBpush(&usb_rx_buffer, Buf[i]);
   }
 
   if (!pushed){
-    error
+    report_error(usb_buffer_overflow);
   }
 
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);

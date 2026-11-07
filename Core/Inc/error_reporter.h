@@ -7,8 +7,8 @@
 
 /*
 This is just a skeleton
-Only improtant thing is calling error_reporter_report_error
-or report warning. its an error if the program should abort
+Only improtant thing is calling report_error
+or report_warning. its an error if the program should abort
 gotta clean up the rest of the internal working still
 */
 
@@ -26,10 +26,10 @@ i.e 1 -> usb buffer overflowed
 // initialization call is needed. NMI and HardFault handlers are not supported.
 
 // Record a fatal error and halt; this function does not return.
-void error_reporter_report_error(int error_code);
+void report_error(int error_code);
 
 // Record a nonzero warning code and return, preserving the interrupt mask.
 // Stores up to 16 warnings; additional warnings are discarded.
-void error_reporter_report_warning(int warning_code);
+void report_warning(int warning_code);
 
 #endif /* INC_ERROR_REPORTER_H_ */
