@@ -19,10 +19,12 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "usb_device.h"
+#include "circular_buffer.h"
+#include "can_translator.h"
+#include "error_reporter.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,6 +50,15 @@ CAN_HandleTypeDef hcan1;
 I2C_HandleTypeDef hi2c2;
 
 /* USER CODE BEGIN PV */
+  static uint8_t usb_rx_storage[256];
+  CircularBuffer_t usb_rx_buffer;
+  static uint8_t usb_tx_storage[256];
+  CircularBuffer_t usb_tx_buffer;
+
+  static CANMessage_t can_tx_storage[16];
+  CANQueue_t can_tx_queue;
+  static CANMessage_t can_rx_storage[16];
+  CANQueue_t can_tx_queue;
 
 /* USER CODE END PV */
 
@@ -94,7 +105,7 @@ int main(void)
   PeriphCommonClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
+  CBinit(&usb_rx_buffer, usb_rx_storage, sizeof(usb_rx_storage));
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
