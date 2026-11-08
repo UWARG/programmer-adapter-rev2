@@ -58,7 +58,7 @@ I2C_HandleTypeDef hi2c2;
   static CANMessage_t can_tx_storage[16];
   CANQueue_t can_tx_queue;
   static CANMessage_t can_rx_storage[16];
-  CANQueue_t can_tx_queue;
+  CANQueue_t can_rx_queue;
 
 /* USER CODE END PV */
 
@@ -106,6 +106,7 @@ int main(void)
 
   /* USER CODE BEGIN SysInit */
   CBinit(&usb_rx_buffer, usb_rx_storage, sizeof(usb_rx_storage));
+  CANQinit(&can_rx_queue, can_rx_storage, sizeof(can_rx_storage) / sizeof(can_rx_storage[0]));
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -373,7 +374,29 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
+  int pending = HAL_CAN_GetRxFifoFillLevel(hcan, CAN_RX_FIFO0);
+  bool pushed = true;
+  int CAN_buffer_full = 2;
 
+  for (int i = 0; i < pending; i++){
+    CAN_RxHeaderTypeDef header;
+    CANMessage_t message = {0};
+    if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &header, message.payload) != HAL_OK) {
+        break;
+    }
+    message.is_extended = (header.IDE == CAN_ID_EXT);
+    message.id = message.is_extended ? header.ExtId : header.StdId;
+    message.dlc = header.DLC;
+
+    if (header.RTR == CAN_RTR_DATA)
+      pushed = CANQpush(&can_rx_queue, message);
+
+    if (!pushed) {
+        report_error(CAN_buffer_full);
+    }
+  }
+}
 /* USER CODE END 4 */
 
 /**
