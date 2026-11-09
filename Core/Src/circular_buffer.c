@@ -33,7 +33,6 @@ bool CBpop(CircularBuffer_t* cb, uint8_t* data) {
 
 	*data = cb->buffer[cb->tail];
 	cb->tail = (cb->tail + 1) & (cb->capacity - 1);
-
 	return true;
 }
 

@@ -35,3 +35,13 @@ bool CANQpop(CANQueue_t* canq, CANMessage_t* data){
 	canq->tail = (canq->tail + 1) & (canq->capacity - 1);
 	return true;
 }
+
+bool CANQpop_upto(CANQueue_t* canq, uint32_t limit_head, CANMessage_t* data){
+	if (limit_head == canq->tail) {
+		return false;
+	}
+
+	*data = canq->buffer[canq->tail];
+	canq->tail = (canq->tail + 1) & (canq->capacity - 1);
+	return true;
+}

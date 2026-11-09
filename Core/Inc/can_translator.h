@@ -18,10 +18,16 @@ typedef struct {
     uint32_t invalid_dlc_errors;
 } CANTranslatorStats_t;
 
+static const char hextoCharLUT[] = "0123456789ABCDE";
 
-uint8_t charToHex(char c);
+
+bool charToHex(char c, uint8_t* out_val);
 
 bool SLCANToCAN(CircularBuffer_t* cb, CANQueue_t* canq);
+
+bool hextoChar(uint8_t hex, char* out_val);
+
+bool CANToSLCAN(CircularBuffer_t* cb, CANQueue_t* canq);
 
 
 #endif /* INC_CAN_TRANSLATOR_H_ */
