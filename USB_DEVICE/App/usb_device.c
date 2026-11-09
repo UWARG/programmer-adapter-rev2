@@ -86,7 +86,7 @@ void MX_USB_DEVICE_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN USB_DEVICE_Init_PostTreatment */
-
+  SET_BIT(USB->CNTR, USB_CNTR_PMAOVRM);
   /* USER CODE END USB_DEVICE_Init_PostTreatment */
 }
 

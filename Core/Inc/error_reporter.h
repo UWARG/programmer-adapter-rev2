@@ -1,7 +1,7 @@
 /*
- * circular_buffer.h
+ * error_reporter.h
  *
- *  Created on: Nov 7, 2026
+ *  Created on: Nov 9, 2026
  *      Author: Tejas
  */
 
@@ -13,13 +13,11 @@ gotta clean up the rest of the internal working still
 */
 
 /*
-put a complete description of what integer maps to what error goes here
-i.e 1 -> usb buffer overflowed
+Error code definitions and descriptions are in error_codes.h.
 */
 
 #ifndef INC_ERROR_REPORTER_H_
 #define INC_ERROR_REPORTER_H_
-
 
 // One shared store is owned by error_reporter.c and starts zeroed at boot.
 // Call these functions from main or maskable interrupt handlers; no object or
