@@ -22,6 +22,9 @@
 #include "usbd_cdc_if.h"
 
 /* USER CODE BEGIN INCLUDE */
+#include "circular_buffer.h"
+#include "error_reporter.h"
+#include "error_codes.h"
 
 /* USER CODE END INCLUDE */
 
@@ -31,7 +34,7 @@
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
-
+extern CircularBuffer_t usb_rx_buffer;
 /* USER CODE END PV */
 
 /** @addtogroup STM32_USB_OTG_DEVICE_LIBRARY
@@ -261,6 +264,16 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 6 */
+  // if buffer gets fille bytes will get dropped
+  bool pushed = true;
+  for (uint32_t i = 0; i < *Len && pushed; i++) {
+    pushed = CBpush(&usb_rx_buffer, Buf[i]);
+  }
+
+  if (!pushed){
+    report_error(ERROR_USB_BUFFER_FULL);
+  }
+
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
   USBD_CDC_ReceivePacket(&hUsbDeviceFS);
   return (USBD_OK);

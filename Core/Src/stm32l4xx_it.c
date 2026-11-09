@@ -22,6 +22,8 @@
 #include "stm32l4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "error_reporter.h"
+#include "error_codes.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -247,7 +249,10 @@ void CAN1_SCE_IRQHandler(void)
 void USB_IRQHandler(void)
 {
   /* USER CODE BEGIN USB_IRQn 0 */
-
+  /* Check before HAL clears the packet-memory overrun/underrun flag. */
+  if ((USB->ISTR & USB_ISTR_PMAOVR) != 0U) {
+    report_error(ERROR_USB_PMA_OVERRUN);
+  }
   /* USER CODE END USB_IRQn 0 */
   HAL_PCD_IRQHandler(&hpcd_USB_FS);
   /* USER CODE BEGIN USB_IRQn 1 */
