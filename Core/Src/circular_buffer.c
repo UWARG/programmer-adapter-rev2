@@ -45,3 +45,17 @@ bool CBpop_upto(CircularBuffer_t* cb, uint32_t limit_head, uint8_t* data) {
     cb->tail = (cb->tail + 1) & (cb->capacity - 1);
     return true;
 }
+
+bool CBIsEmpty(CircularBuffer_t* cb) {
+	return (cb->head == cb->tail);
+}
+
+void CBreset(CircularBuffer_t* cb) {
+	uint32_t primask = __get_PRIMASK();
+	__disable_irq();
+
+	cb->head = 0;
+	cb->tail = 0;
+
+	__set_PRIMASK(primask);
+}

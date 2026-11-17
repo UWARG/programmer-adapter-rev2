@@ -37,5 +37,9 @@ bool CANQpop(CANQueue_t* canq, CANMessage_t* data);
 
 bool CANQpop_upto(CANQueue_t* canq, uint32_t limit_head, CANMessage_t* data);
 
+bool CANQIsEmpty(CANQueue_t* canq);
+
+void CANQreset(CANQueue_t* canq);
+
 
 #endif /* INC_CAN_QUEUE_H_ */

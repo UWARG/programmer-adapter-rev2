@@ -19,11 +19,11 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "usb_device.h"
-#include "circular_buffer.h"
-#include "can_translator.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "circular_buffer.h"
+#include "can_translator.h"
 #include "error_reporter.h"
 #include "error_codes.h"
 #include "usbd_cdc_if.h"
@@ -54,14 +54,14 @@ I2C_HandleTypeDef hi2c2;
 /* USER CODE BEGIN PV */
   extern USBD_HandleTypeDef hUsbDeviceFS;
 
-  static uint8_t usb_rx_storage[256];
+  static uint8_t usb_rx_storage[512];
   CircularBuffer_t usb_rx_buffer;
-  static uint8_t usb_tx_storage[256];
+  static uint8_t usb_tx_storage[1024];
   CircularBuffer_t usb_tx_buffer;
 
-  static CANMessage_t can_tx_storage[16];
+  static CANMessage_t can_tx_storage[128];
   CANQueue_t can_tx_queue;
-  static CANMessage_t can_rx_storage[16];
+  static CANMessage_t can_rx_storage[128];
   CANQueue_t can_rx_queue;
 
 /* USER CODE END PV */
@@ -74,6 +74,8 @@ static void MX_CAN1_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
+void CAN_SafeShutdown(void);
+void usb_tx_push_error(CircularBuffer_t* cb, const char* buffer, uint16_t length);
 void can_tx_to_peripheral(void);
 void usb_tx_to_host(void);
 /* USER CODE END PFP */
@@ -403,6 +405,29 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void CAN_SafeShutdown(void) {
+  HAL_CAN_Stop(&hcan1);
+  HAL_CAN_DeInit(&hcan1);
+}
+
+void usb_tx_push_error(CircularBuffer_t* cb, const char* error_mssg, uint16_t max_length) {
+  uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+
+  CBreset(cb);
+
+  for(int i = 0; i < max_length && error_mssg[i] != '\0'; i++) {
+    if(!CBpush(cb, (uint8_t)error_mssg[i])) {
+      __set_PRIMASK(primask);
+
+      return;
+    }
+  }
+
+  __set_PRIMASK(primask);
+}
+
+
 void can_tx_to_peripheral(void) {
   const uint32_t max_retries = 1; // Adjust this if you want more retries
   static uint32_t pending_mailbox = 0;

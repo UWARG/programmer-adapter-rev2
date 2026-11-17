@@ -188,7 +188,7 @@ bool CANToSLCAN(CircularBuffer_t* cb, CANQueue_t* canq) {
                 stats.invalid_command_headers++;
                 return false;
             }
-            if (!CBpush((cb, (uint8_t)ascii_digit))) {
+            if (!CBpush(cb, (uint8_t)ascii_digit)) {
 				stats.buffer_overflows++;
 				return false;
 			}
@@ -202,7 +202,7 @@ bool CANToSLCAN(CircularBuffer_t* cb, CANQueue_t* canq) {
             stats.invalid_command_headers++;
             return false;
         }
-        if (!CBpush((cb, (uint8_t)ascii_digit))) {
+        if (!CBpush(cb, (uint8_t)ascii_digit)) {
 			stats.buffer_overflows++;
 			return false;
 		}
@@ -215,7 +215,7 @@ bool CANToSLCAN(CircularBuffer_t* cb, CANQueue_t* canq) {
                 stats.invalid_command_headers++;
                 return false;
             }
-            if (!CBpush((cb, (uint8_t)ascii_digit))) {
+            if (!CBpush(cb, (uint8_t)ascii_digit)) {
     			stats.buffer_overflows++;
     			return false;
     		}
@@ -223,13 +223,13 @@ bool CANToSLCAN(CircularBuffer_t* cb, CANQueue_t* canq) {
                 stats.invalid_command_headers++;
                 return false;
             }
-            if (!CBpush((cb, (uint8_t)ascii_digit))) {
+            if (!CBpush(cb, (uint8_t)ascii_digit)) {
     			stats.buffer_overflows++;
     			return false;
     		}
         }
 
-        if (!CBpush((cb, '\r'))) {
+        if (!CBpush(cb, '\r')) {
 			stats.buffer_overflows++;
 			return false;
 		}
