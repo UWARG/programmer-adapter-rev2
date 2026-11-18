@@ -1,5 +1,7 @@
 #include "error_reporter.h"
 
+static volatile uint32_t warning_counts[WARNING_MAX_COUNT] = {0};
+
 const char* GetErrorMessage(ErrorCode_t code) {
     switch (code) {
         // --- Tier 2: Runtime Error ---
@@ -16,14 +18,6 @@ const char* GetErrorMessage(ErrorCode_t code) {
         case ERROR_USB_TX_RETRIES_EXCEEDED:
             return "[ERR: USB_TX_RETRY]\r\n";
 
-        // --- Hardware Warnings / Non-Fatal Exceptions ---
-        case ERROR_CAN_HW_OVERFLOW:
-            return "[WARN: CAN_HW_OVERFLOW]\r\n";
-        case ERROR_USB_PMA_OVERRUN:
-            return "[WARN: USB_PMA_OVERRUN]\r\n";
-        case ERROR_CAN_READ_FAILED:
-            return "[ERR: CAN_READ_FAIL]\r\n";
-
         // --- Tier 1: Initialization Fatal Faults ---
         case ERROR_CAN_FILTER_CONFIG:
             return "[FATAL: CAN_FILTER_FAIL]\r\n";
@@ -35,6 +29,37 @@ const char* GetErrorMessage(ErrorCode_t code) {
         // Fallback for safety
         default:
             return "[ERR: UNKNOWN_FAULT]\r\n";
+    }
+}
+
+const char* GetWarningMessage(WarningCode_t code) {
+    switch (code) {
+        case WARN_CAN_HW_OVERFLOW:
+            return "[WARN: CAN_HW_OVERFLOW]";
+        case WARN_USB_PMA_OVERRUN:
+            return "[WARN: USB_PMA_OVERRUN]";
+        case WARN_CAN_READ_FAILED:
+            return "[WARN: CAN_READ_FAIL]";
+        default:
+            return "[WARN: UNKNOWN]";
+    }
+}
+
+void handle_diagnostic_request(void) {
+    char report[256];
+    
+    int len = snprintf(report, sizeof(report), 
+        "--- BRIDGE WARNING STATS ---\r\n"
+        "%s - Count: %lu\r\n"
+        "%s - Count: %lu\r\n"
+        "%s - Count: %lu\r\n",
+        GetWarningMessage(WARN_CAN_HW_OVERFLOW), warning_counts[WARN_CAN_HW_OVERFLOW],
+        GetWarningMessage(WARN_USB_PMA_OVERRUN), warning_counts[WARN_USB_PMA_OVERRUN],
+        GetWarningMessage(WARN_CAN_READ_FAILED), warning_counts[WARN_CAN_READ_FAILED]
+    );
+
+    if (len > 0 && len < sizeof(report)) {
+        usb_tx_push(&usb_tx_buffer, report, (uint16_t)len);
     }
 }
 
@@ -65,5 +90,27 @@ void report_tier1_fatal(ErrorCode_t error_code) {
 
     while (1) {
         __NOP();
+    }
+}
+
+void report_tier2_runtime(ErrorCode_t error_code) {
+    const char* error_mssg = GetErrorMessage(error_code);
+    usb_tx_push_error(&usb_tx_buffer, error_mssg, strlen(error_mssg));
+
+    CBreset(&usb_rx_buffer);
+    CANQreset(&can_tx_queue);
+    CANQreset(&can_rx_queue);
+
+    current_bridge_state = BRIDGE_STATE_WAITING_FOR_SYNC;
+}
+
+void report_warning(WarningCode_t warning_code) {
+    if (warning_code < WARNING_MAX_COUNT) {
+        uint32_t primask = __get_PRIMASK();
+        __disable_irq();
+        
+        warning_counts[warning_code]++;
+        
+        __set_PRIMASK(primask);
     }
 }

@@ -31,7 +31,10 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+typedef enum {
+    BRIDGE_STATE_NORMAL = 0,
+    BRIDGE_STATE_WAITING_FOR_SYNC
+} BridgeState_t;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -52,17 +55,19 @@ CAN_HandleTypeDef hcan1;
 I2C_HandleTypeDef hi2c2;
 
 /* USER CODE BEGIN PV */
-  extern USBD_HandleTypeDef hUsbDeviceFS;
+volatile BridgeState_t current_bridge_state = BRIDGE_STATE_NORMAL;
 
-  static uint8_t usb_rx_storage[512];
-  CircularBuffer_t usb_rx_buffer;
-  static uint8_t usb_tx_storage[1024];
-  CircularBuffer_t usb_tx_buffer;
+extern USBD_HandleTypeDef hUsbDeviceFS;
 
-  static CANMessage_t can_tx_storage[128];
-  CANQueue_t can_tx_queue;
-  static CANMessage_t can_rx_storage[128];
-  CANQueue_t can_rx_queue;
+static uint8_t usb_rx_storage[512];
+CircularBuffer_t usb_rx_buffer;
+static uint8_t usb_tx_storage[1024];
+CircularBuffer_t usb_tx_buffer;
+
+static CANMessage_t can_tx_storage[128];
+CANQueue_t can_tx_queue;
+static CANMessage_t can_rx_storage[128];
+CANQueue_t can_rx_queue;
 
 /* USER CODE END PV */
 
@@ -75,7 +80,8 @@ static void MX_I2C2_Init(void);
 static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 void CAN_SafeShutdown(void);
-void usb_tx_push_error(CircularBuffer_t* cb, const char* buffer, uint16_t length);
+bool usb_tx_push(CircularBuffer_t* cb, const char* conf_mssg, uint16_t max_length);
+void usb_tx_push_error(CircularBuffer_t* cb, const char* error_mssg, uint16_t max_length);
 void can_tx_to_peripheral(void);
 void usb_tx_to_host(void);
 /* USER CODE END PFP */
@@ -155,7 +161,17 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-
+    if (current_bridge_state == BRIDGE_STATE_WAITING_FOR_SYNC) {
+      uint8_t rx_byte;
+      if (CBpop(&usb_rx_buffer, &rx_byte)) {
+        if (rx_byte == '\r') {
+          current_bridge_state = BRIDGE_STATE_NORMAL;
+        }
+      }
+    } else {
+      // Process CAN queue -> USB TX
+      // Process USB RX -> CAN queue
+    }
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -408,6 +424,21 @@ static void MX_GPIO_Init(void)
 void CAN_SafeShutdown(void) {
   HAL_CAN_Stop(&hcan1);
   HAL_CAN_DeInit(&hcan1);
+}
+
+bool usb_tx_push(CircularBuffer_t* cb, const char* conf_mssg, uint16_t max_length){
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq(); // Protect head/tail pointers from race conditions
+
+    for (uint16_t i = 0; i < max_length && conf_mssg[i] != '\0'; i++) {
+        if (!CBpush(cb, (uint8_t)conf_mssg[i])) {
+            __set_PRIMASK(primask);
+            return false; 
+        }
+    }
+
+    __set_PRIMASK(primask);
+    return true;
 }
 
 void usb_tx_push_error(CircularBuffer_t* cb, const char* error_mssg, uint16_t max_length) {

@@ -8,6 +8,8 @@
 #ifndef INC_ERROR_REPORTER_H_
 #define INC_ERROR_REPORTER_H_
 
+#define WARNING_MAX_COUNT 3U
+
 #include "error_codes.h"
 #include <string.h>
 #include <circular_buffer.h>
@@ -16,6 +18,8 @@
 
 extern void CAN_SafeShutdown(void);
 extern void usb_tx_push_error(CircularBuffer_t* cb, const char* error_mssg, uint16_t max_length);
+
+extern BridgeState_t current_bridge_state;
 extern USBD_CDC_HandleTypeDef *hcdc;
 extern CircularBuffer_t usb_rx_buffer;
 extern CircularBuffer_t usb_tx_buffer;
@@ -24,10 +28,14 @@ extern CANQueue_t can_rx_queue;
 
 const char* GetErrorMessage(ErrorCode_t code);
 
+const char* GetWarningMessage(WarningCode_t code);
+
+void handle_diagnostic_request(void);
+
 void report_tier1_fatal(ErrorCode_t error_code);
 
 void report_tier2_runtime(ErrorCode_t error_code);
 
-void report_warning(ErrorCode_t warning_code);
+void report_warning(WarningCode_t warning_code);
 
 #endif /* INC_ERROR_REPORTER_H_ */
