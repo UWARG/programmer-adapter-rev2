@@ -271,7 +271,7 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
   }
 
   if (!pushed){
-    report_error(ERROR_USB_BUFFER_FULL);
+    report_tier2_runtime(ERROR_USB_RX_BUFFER_FULL);
   }
 
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);

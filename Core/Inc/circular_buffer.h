@@ -29,4 +29,9 @@ bool CBpop(CircularBuffer_t* cb, uint8_t* data);
 
 bool CBpop_upto(CircularBuffer_t* cb, uint32_t limit_head, uint8_t* data);
 
+bool CBIsEmpty(CircularBuffer_t* cb);
+
+void CBreset(CircularBuffer_t* cb);
+
+
 #endif /* INC_CIRCULAR_BUFFER_H_ */

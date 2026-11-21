@@ -45,3 +45,17 @@ bool CANQpop_upto(CANQueue_t* canq, uint32_t limit_head, CANMessage_t* data){
 	canq->tail = (canq->tail + 1) & (canq->capacity - 1);
 	return true;
 }
+
+bool CANQIsEmpty(CANQueue_t* canq){
+	return (canq->head == canq->tail);
+}
+
+void CANQreset(CANQueue_t* canq) {
+	uint32_t primask = __get_PRIMASK();
+	__disable_irq();
+
+	canq->head = 0;
+	canq->tail = 0;
+
+	__set_PRIMASK(primask);
+}
