@@ -140,16 +140,16 @@ int main(void)
   filter.FilterActivation = CAN_FILTER_ENABLE;
   // ID and mask fields remain zero: accept all CAN IDs.
   if (HAL_CAN_ConfigFilter(&hcan1, &filter) != HAL_OK) {
-    report_error(ERROR_CAN_FILTER_CONFIG);
+    report_tier1_fatal(ERROR_CAN_FILTER_CONFIG);
   }
 
   if (HAL_CAN_Start(&hcan1) != HAL_OK) {
-    report_error(ERROR_CAN_START);
+    report_tier1_fatal(ERROR_CAN_START);
   }
 
   if (HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING |
                                          CAN_IT_RX_FIFO0_OVERRUN) != HAL_OK) {
-    report_error(ERROR_CAN_RX_NOTIFICATION);
+    report_tier1_fatal(ERROR_CAN_RX_NOTIFICATION);
   }
 
   // TX completion is polled below; HAL must leave its result flags intact.
@@ -523,7 +523,7 @@ void can_tx_to_peripheral(void) {
 
   // Check if retries exceeded
   if (retries > max_retries) {
-    report_error(ERROR_CAN_TX_RETRIES_EXCEEDED);
+    report_tier2_runtime(ERROR_CAN_TX_RETRIES_EXCEEDED);
     return;
   }
 }
@@ -585,7 +585,7 @@ void usb_tx_to_host(void) {
 
   // Check if retries exceeded.
   if (retries > max_retries) {
-    report_error(ERROR_USB_TX_RETRIES_EXCEEDED);
+    report_tier2_runtime(ERROR_CAN_TX_RETRIES_EXCEEDED); 
     return;
   }
 }
@@ -598,7 +598,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
     CAN_RxHeaderTypeDef header;
     CANMessage_t message = {0};
     if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &header, message.payload) != HAL_OK) {
-        report_error(ERROR_CAN_READ_FAILED);
+        report_warning(WARN_CAN_READ_FAILED);
     }
     message.is_extended = (header.IDE == CAN_ID_EXT);
     message.id = message.is_extended ? header.ExtId : header.StdId;
@@ -608,7 +608,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
       pushed = CANQpush(&can_rx_queue, message);
 
     if (!pushed) {
-        report_error(ERROR_CAN_BUFFER_FULL);
+        report_warning(WARN_CAN_RX_BUFFER_FULL);
     }
   }
 }
@@ -616,7 +616,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
 void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan) {
   if (hcan->Instance == CAN1 &&
       (HAL_CAN_GetError(hcan) & HAL_CAN_ERROR_RX_FOV0) != 0U) {
-    report_error(ERROR_CAN_HW_OVERFLOW);
+      report_warning(WARN_CAN_HW_OVERFLOW);
   }
 }
 /* USER CODE END 4 */

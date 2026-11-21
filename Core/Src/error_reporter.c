@@ -6,29 +6,37 @@ const char* GetErrorMessage(ErrorCode_t code) {
     switch (code) {
         // --- Tier 2: Runtime Error ---
         case ERROR_USB_TX_BUFFER_FULL:
-            return "[ERR: USB_TX_FULL]\r\n";
+            return "\a[ERR: USB_TX_FULL]\r\n";
         case ERROR_USB_RX_BUFFER_FULL:
-            return "[ERR: USB_RX_FULL]\r\n";
+            return "\a[ERR: USB_RX_FULL]\r\n";
         case ERROR_CAN_TX_BUFFER_FULL:
-            return "[ERR: CAN_TX_FULL]\r\n";
-        case ERROR_CAN_RX_BUFFER_FULL:
-            return "[ERR: CAN_RX_FULL]\r\n";
+            return "\a[ERR: CAN_TX_FULL]\r\n";
         case ERROR_CAN_TX_RETRIES_EXCEEDED:
-            return "[ERR: CAN_BUS_OFF]\r\n";
-        case ERROR_USB_TX_RETRIES_EXCEEDED:
-            return "[ERR: USB_TX_RETRY]\r\n";
+            return "\a[ERR: CAN_BUS_OFF]\r\n";
+            
+        // --- SLCAN Protocol Strings ---
+        case ERROR_SLCAN_INVALID_CMD:
+            return "\a[ERR: SLCAN_BAD_CMD]\r\n";
+        case ERROR_SLCAN_INVALID_DLC:
+            return "\a[ERR: SLCAN_BAD_DLC]\r\n";
+        case ERROR_SLCAN_LINE_BUFFER_FULL:
+            return "\a[ERR: SLCAN_BUF_OVF]\r\n";
+        case ERROR_SLCAN_INVALID_HEX:
+            return "\a[ERR: SLCAN_BAD_HEX]\r\n";
+        case ERROR_SLCAN_ENCODE_FAILED:
+            return "\a[ERR: SLCAN_ENCODE_FAIL]\r\n";
 
         // --- Tier 1: Initialization Fatal Faults ---
         case ERROR_CAN_FILTER_CONFIG:
-            return "[FATAL: CAN_FILTER_FAIL]\r\n";
+            return "\a[FATAL: CAN_FILTER_FAIL]\r\n";
         case ERROR_CAN_START:
-            return "[FATAL: CAN_START_FAIL]\r\n";
+            return "\a[FATAL: CAN_START_FAIL]\r\n";
         case ERROR_CAN_RX_NOTIFICATION:
-            return "[FATAL: CAN_NOTIF_FAIL]\r\n";
+            return "\a[FATAL: CAN_NOTIF_FAIL]\r\n";
 
         // Fallback for safety
         default:
-            return "[ERR: UNKNOWN_FAULT]\r\n";
+            return "\a[ERR: UNKNOWN]\r\n";
     }
 }
 
@@ -40,6 +48,10 @@ const char* GetWarningMessage(WarningCode_t code) {
             return "[WARN: USB_PMA_OVERRUN]";
         case WARN_CAN_READ_FAILED:
             return "[WARN: CAN_READ_FAIL]";
+        case WARN_CAN_INVALID_DLC:
+            return "[WARN: CAN_INVALID_DLC]";
+        case WARN_CAN_RX_BUFFER_FULL:
+            return "[WARN: CAN_RX_FULL]";
         default:
             return "[WARN: UNKNOWN]";
     }
