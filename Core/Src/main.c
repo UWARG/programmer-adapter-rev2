@@ -19,11 +19,11 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "usb_device.h"
-#include "circular_buffer.h"
-#include "can_translator.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "circular_buffer.h"
+#include "can_translator.h"
 #include "error_reporter.h"
 #include "error_codes.h"
 #include "usbd_cdc_if.h"
@@ -31,7 +31,10 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+typedef enum {
+    BRIDGE_STATE_NORMAL = 0,
+    BRIDGE_STATE_WAITING_FOR_SYNC
+} BridgeState_t;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -52,17 +55,19 @@ CAN_HandleTypeDef hcan1;
 I2C_HandleTypeDef hi2c2;
 
 /* USER CODE BEGIN PV */
-  extern USBD_HandleTypeDef hUsbDeviceFS;
+volatile BridgeState_t current_bridge_state = BRIDGE_STATE_NORMAL;
 
-  static uint8_t usb_rx_storage[256];
-  CircularBuffer_t usb_rx_buffer;
-  static uint8_t usb_tx_storage[256];
-  CircularBuffer_t usb_tx_buffer;
+extern USBD_HandleTypeDef hUsbDeviceFS;
 
-  static CANMessage_t can_tx_storage[16];
-  CANQueue_t can_tx_queue;
-  static CANMessage_t can_rx_storage[16];
-  CANQueue_t can_rx_queue;
+static uint8_t usb_rx_storage[512];
+CircularBuffer_t usb_rx_buffer;
+static uint8_t usb_tx_storage[1024];
+CircularBuffer_t usb_tx_buffer;
+
+static CANMessage_t can_tx_storage[128];
+CANQueue_t can_tx_queue;
+static CANMessage_t can_rx_storage[128];
+CANQueue_t can_rx_queue;
 
 /* USER CODE END PV */
 
@@ -74,6 +79,9 @@ static void MX_CAN1_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
+void CAN_SafeShutdown(void);
+bool usb_tx_push(CircularBuffer_t* cb, const char* conf_mssg, uint16_t max_length);
+void usb_tx_push_error(CircularBuffer_t* cb, const char* error_mssg, uint16_t max_length);
 void can_tx_to_peripheral(void);
 void usb_tx_to_host(void);
 /* USER CODE END PFP */
@@ -132,16 +140,16 @@ int main(void)
   filter.FilterActivation = CAN_FILTER_ENABLE;
   // ID and mask fields remain zero: accept all CAN IDs.
   if (HAL_CAN_ConfigFilter(&hcan1, &filter) != HAL_OK) {
-    report_error(ERROR_CAN_FILTER_CONFIG);
+    report_tier1_fatal(ERROR_CAN_FILTER_CONFIG);
   }
 
   if (HAL_CAN_Start(&hcan1) != HAL_OK) {
-    report_error(ERROR_CAN_START);
+    report_tier1_fatal(ERROR_CAN_START);
   }
 
   if (HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING |
                                          CAN_IT_RX_FIFO0_OVERRUN) != HAL_OK) {
-    report_error(ERROR_CAN_RX_NOTIFICATION);
+    report_tier1_fatal(ERROR_CAN_RX_NOTIFICATION);
   }
   /* USER CODE END 2 */
 
@@ -150,7 +158,17 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-
+    if (current_bridge_state == BRIDGE_STATE_WAITING_FOR_SYNC) {
+      uint8_t rx_byte;
+      if (CBpop(&usb_rx_buffer, &rx_byte)) {
+        if (rx_byte == '\r') {
+          current_bridge_state = BRIDGE_STATE_NORMAL;
+        }
+      }
+    } else {
+      // Process CAN queue -> USB TX
+      // Process USB RX -> CAN queue
+    }
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -400,6 +418,44 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void CAN_SafeShutdown(void) {
+  HAL_CAN_Stop(&hcan1);
+  HAL_CAN_DeInit(&hcan1);
+}
+
+bool usb_tx_push(CircularBuffer_t* cb, const char* conf_mssg, uint16_t max_length){
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq(); // Protect head/tail pointers from race conditions
+
+    for (uint16_t i = 0; i < max_length && conf_mssg[i] != '\0'; i++) {
+        if (!CBpush(cb, (uint8_t)conf_mssg[i])) {
+            __set_PRIMASK(primask);
+            return false; 
+        }
+    }
+
+    __set_PRIMASK(primask);
+    return true;
+}
+
+void usb_tx_push_error(CircularBuffer_t* cb, const char* error_mssg, uint16_t max_length) {
+  uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+
+  CBreset(cb);
+
+  for(int i = 0; i < max_length && error_mssg[i] != '\0'; i++) {
+    if(!CBpush(cb, (uint8_t)error_mssg[i])) {
+      __set_PRIMASK(primask);
+
+      return;
+    }
+  }
+
+  __set_PRIMASK(primask);
+}
+
+
 void can_tx_to_peripheral(void) {
   const uint32_t max_retries = 1; // Adjust this if you want more retries
   static uint32_t pending_mailbox = 0;
@@ -464,7 +520,7 @@ void can_tx_to_peripheral(void) {
 
   // Check if retries exceeded
   if (retries > max_retries) {
-    report_error(ERROR_CAN_TX_RETRIES_EXCEEDED);
+    report_tier2_runtime(ERROR_CAN_TX_RETRIES_EXCEEDED);
     return;
   }
 }
@@ -526,7 +582,7 @@ void usb_tx_to_host(void) {
 
   // Check if retries exceeded.
   if (retries > max_retries) {
-    report_error(ERROR_USB_TX_RETRIES_EXCEEDED);
+    report_tier2_runtime(ERROR_CAN_TX_RETRIES_EXCEEDED); 
     return;
   }
 }
@@ -539,7 +595,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
     CAN_RxHeaderTypeDef header;
     CANMessage_t message = {0};
     if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &header, message.payload) != HAL_OK) {
-        report_error(ERROR_CAN_READ_FAILED);
+        report_warning(WARN_CAN_READ_FAILED);
     }
     message.is_extended = (header.IDE == CAN_ID_EXT);
     message.id = message.is_extended ? header.ExtId : header.StdId;
@@ -549,7 +605,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
       pushed = CANQpush(&can_rx_queue, message);
 
     if (!pushed) {
-        report_error(ERROR_CAN_BUFFER_FULL);
+        report_warning(WARN_CAN_RX_BUFFER_FULL);
     }
   }
 }
@@ -557,7 +613,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
 void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan) {
   if (hcan->Instance == CAN1 &&
       (HAL_CAN_GetError(hcan) & HAL_CAN_ERROR_RX_FOV0) != 0U) {
-    report_error(ERROR_CAN_HW_OVERFLOW);
+      report_warning(WARN_CAN_HW_OVERFLOW);
   }
 }
 /* USER CODE END 4 */
