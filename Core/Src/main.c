@@ -143,9 +143,6 @@ int main(void)
                                          CAN_IT_RX_FIFO0_OVERRUN) != HAL_OK) {
     report_error(ERROR_CAN_RX_NOTIFICATION);
   }
-
-  // TX completion is polled below; HAL must leave its result flags intact.
-  __HAL_CAN_DISABLE_IT(&hcan1, CAN_IT_TX_MAILBOX_EMPTY);
   /* USER CODE END 2 */
 
   /* Infinite loop */

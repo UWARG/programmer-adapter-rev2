@@ -9,13 +9,13 @@
 #define INC_ERROR_CODES_H_
 
 enum {
-    ERROR_USB_BUFFER_FULL     = 1,
+    ERROR_USB_BUFFER_FULL = 1,
     // USB SW buffer overflowed when pushing from HW buffer
-    ERROR_CAN_BUFFER_FULL     = 2,
+    ERROR_CAN_BUFFER_FULL = 2,
     // CAN SW buffer overflowed when pushing from HW buffer
-    ERROR_CAN_FILTER_CONFIG   = 3,
+    ERROR_CAN_FILTER_CONFIG = 3,
     // CAN filter configuration failed
-    ERROR_CAN_START           = 4,
+    ERROR_CAN_START = 4,
     // CAN start failed
     ERROR_CAN_RX_NOTIFICATION = 5,
     // CAN RX notification setup failed
