@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 #include "error_reporter.h"
 #include "error_codes.h"
+#include "usbd_cdc_if.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -256,7 +257,7 @@ void USB_IRQHandler(void)
   /* USER CODE END USB_IRQn 0 */
   HAL_PCD_IRQHandler(&hpcd_USB_FS);
   /* USER CODE BEGIN USB_IRQn 1 */
-
+  usb_tx_to_host();
   /* USER CODE END USB_IRQn 1 */
 }
 

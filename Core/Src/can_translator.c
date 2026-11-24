@@ -224,6 +224,9 @@ bool CANToSLCAN(CircularBuffer_t* cb, CANQueue_t* canq) {
 			report_tier2_runtime(ERROR_USB_TX_BUFFER_FULL);
 			return false;
 		}
+        if (cb == &usb_tx_buffer) {
+            NVIC_SetPendingIRQ(USB_IRQn);
+        }
     }
 
     return true;

@@ -57,8 +57,6 @@ I2C_HandleTypeDef hi2c2;
 /* USER CODE BEGIN PV */
 volatile BridgeState_t current_bridge_state = BRIDGE_STATE_NORMAL;
 
-extern USBD_HandleTypeDef hUsbDeviceFS;
-
 static uint8_t usb_rx_storage[512];
 CircularBuffer_t usb_rx_buffer;
 static uint8_t usb_tx_storage[1024];
@@ -84,7 +82,6 @@ static void MX_ADC1_Init(void);
 void CAN_SafeShutdown(void);
 bool usb_tx_push(CircularBuffer_t* cb, const char* conf_mssg, uint16_t max_length);
 void usb_tx_push_error(CircularBuffer_t* cb, const char* error_mssg, uint16_t max_length);
-void usb_tx_to_host(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -433,6 +430,9 @@ bool usb_tx_push(CircularBuffer_t* cb, const char* conf_mssg, uint16_t max_lengt
             __set_PRIMASK(primask);
             return false; 
         }
+        if (i == 0U && cb == &usb_tx_buffer) {
+            NVIC_SetPendingIRQ(USB_IRQn);
+        }
     }
 
     __set_PRIMASK(primask);
@@ -444,80 +444,11 @@ void usb_tx_push_error(CircularBuffer_t* cb, const char* error_mssg, uint16_t ma
   __disable_irq();
 
   CBreset(cb);
-
-  for(int i = 0; i < max_length && error_mssg[i] != '\0'; i++) {
-    if(!CBpush(cb, (uint8_t)error_mssg[i])) {
-      __set_PRIMASK(primask);
-
-      return;
-    }
-  }
+  (void)usb_tx_push(cb, error_mssg, max_length);
 
   __set_PRIMASK(primask);
 }
 
-
-void usb_tx_to_host(void) {
-  const uint32_t max_retries = 1; // Adjust this if you want more retries
-  static bool pending_transfer = false;
-  static uint32_t retries = 0;
-
-  if (usb_tx_buffer.head == usb_tx_buffer.tail) {
-    return;
-  }
-
-  USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef *)hUsbDeviceFS.pClassData;
-
-  // Suspension pauses an ongoing transfer. It is not a failed attempt.
-  if (hUsbDeviceFS.dev_state == USBD_STATE_SUSPENDED) {
-    return;
-  }
-
-  // Start a send if there is no ongoing attempt to check.
-  if (!pending_transfer) {
-    // If USB is unavailable or busy, try on the next cycle in main. Not an error.
-    if (hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED ||
-        hcdc == NULL || hcdc->TxState != 0) {
-      return;
-    }
-
-    // Each circular-buffer entry is one byte. Keep it queued while USB uses it.
-    uint8_t *message = &usb_tx_buffer.buffer[usb_tx_buffer.tail];
-    uint8_t status = CDC_Transmit_FS(message, sizeof(*message));
-
-    if (status == USBD_OK) {
-      pending_transfer = true;
-      return;
-    } else if (status == USBD_BUSY) {
-      return;
-    } else {
-      retries++;
-    }
-  }
-  // Check whether the ongoing transfer completed or USB was deconfigured.
-  else {
-    if (hUsbDeviceFS.dev_state == USBD_STATE_CONFIGURED && hcdc != NULL) {
-      if (hcdc->TxState != 0) {
-        return; // Still pending. Repeated calls do not consume retries.
-      }
-
-      uint8_t sent;
-      (void)CBpop(&usb_tx_buffer, &sent);
-      pending_transfer = false;
-      retries = 0;
-      return;
-    } else {
-      pending_transfer = false;
-      retries++;
-    }
-  }
-
-  // Check if retries exceeded.
-  if (retries > max_retries) {
-    report_tier2_runtime(ERROR_CAN_TX_RETRIES_EXCEEDED); 
-    return;
-  }
-}
 
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
   int pending = HAL_CAN_GetRxFifoFillLevel(hcan, CAN_RX_FIFO0);
