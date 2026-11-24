@@ -39,7 +39,7 @@ typedef enum {
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define CAN_TX_MAX_RETRIES 1U
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -66,6 +66,8 @@ CircularBuffer_t usb_tx_buffer;
 
 static CANMessage_t can_tx_storage[128];
 CANQueue_t can_tx_queue;
+volatile ErrorCode_t can_tx_error = ERROR_NONE;
+volatile uint32_t can_tx_failed_attempts;
 static CANMessage_t can_rx_storage[128];
 CANQueue_t can_rx_queue;
 
@@ -82,7 +84,6 @@ static void MX_ADC1_Init(void);
 void CAN_SafeShutdown(void);
 bool usb_tx_push(CircularBuffer_t* cb, const char* conf_mssg, uint16_t max_length);
 void usb_tx_push_error(CircularBuffer_t* cb, const char* error_mssg, uint16_t max_length);
-void can_tx_to_peripheral(void);
 void usb_tx_to_host(void);
 /* USER CODE END PFP */
 
@@ -456,75 +457,6 @@ void usb_tx_push_error(CircularBuffer_t* cb, const char* error_mssg, uint16_t ma
 }
 
 
-void can_tx_to_peripheral(void) {
-  const uint32_t max_retries = 1; // Adjust this if you want more retries
-  static uint32_t pending_mailbox = 0;
-  static uint32_t retries = 0;
-
-  if (can_tx_queue.head == can_tx_queue.tail) {
-    return;
-  }
-
-  // Send on any mailbox if no ongoing send attempt/cleanup to do
-  if (pending_mailbox == 0) {
-    // if mailbox busy, wait to try on next cycle of main. Not an error
-    if (HAL_CAN_GetTxMailboxesFreeLevel(&hcan1) == 0) {
-      return;
-    }
-
-    CANMessage_t *message = &can_tx_queue.buffer[can_tx_queue.tail];
-    CAN_TxHeaderTypeDef header = {0};
-    header.IDE = message->is_extended ? CAN_ID_EXT : CAN_ID_STD;
-    header.StdId = message->is_extended ? 0 : message->id;
-    header.ExtId = message->is_extended ? message->id : 0;
-    header.RTR = CAN_RTR_DATA;
-    header.DLC = message->dlc;
-    header.TransmitGlobalTime = DISABLE;
-
-    uint32_t mailbox = 0;
-
-    // Happy path where it just sends
-    if (HAL_CAN_AddTxMessage(&hcan1, &header, message->payload, &mailbox) == HAL_OK) {
-      pending_mailbox = mailbox;
-      return;
-    } else {
-      retries++;
-    }
-  }
-  // If pending mailbox hasn't updated check there is an ongoing attempt to check
-  else {
-    // Each mailbox has an eight-bit group of completion/result flags in TSR.
-    uint32_t flag_shift = (pending_mailbox == CAN_TX_MAILBOX0) ? 0 :
-                          (pending_mailbox == CAN_TX_MAILBOX1) ? 8 : 16;
-    uint32_t complete_mask = CAN_TSR_RQCP0 << flag_shift;
-    uint32_t success_mask = CAN_TSR_TXOK0 << flag_shift;
-    uint32_t status = READ_REG(hcan1.Instance->TSR);
-
-    if ((status & complete_mask) == 0) {
-      return; // Still pending. Repeated calls do not consume retries.
-    }
-
-    // Writing only RQCP clears this mailbox's result without affecting others.
-    WRITE_REG(hcan1.Instance->TSR, complete_mask);
-    pending_mailbox = 0;
-
-    if ((status & success_mask) != 0) {
-      CANMessage_t sent;
-      (void)CANQpop(&can_tx_queue, &sent);
-      retries = 0;
-      return;
-    } else {
-      retries++;
-    }
-  }
-
-  // Check if retries exceeded
-  if (retries > max_retries) {
-    report_tier2_runtime(ERROR_CAN_TX_RETRIES_EXCEEDED);
-    return;
-  }
-}
-
 void usb_tx_to_host(void) {
   const uint32_t max_retries = 1; // Adjust this if you want more retries
   static bool pending_transfer = false;
@@ -607,6 +539,73 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
     if (!pushed) {
         report_warning(WARN_CAN_RX_BUFFER_FULL);
     }
+  }
+}
+
+// Call after HAL_CAN_IRQHandler in CAN1 TX, RX0 and SCE, at equal preemption priority.
+// Pend CAN1_TX_IRQn after enqueueing to start transmission on an idle bus.
+void can_tx_to_peripheral(void) {
+  static uint8_t attempts[3];
+  static const uint32_t mailbox_errors[3] = {
+    HAL_CAN_ERROR_TX_TERR0 | HAL_CAN_ERROR_TX_ALST0,
+    HAL_CAN_ERROR_TX_TERR1 | HAL_CAN_ERROR_TX_ALST1,
+    HAL_CAN_ERROR_TX_TERR2 | HAL_CAN_ERROR_TX_ALST2
+  };
+  // HAL caches completed mailbox errors. Consume just the TX bits once per pass.
+  const uint32_t tx_errors = HAL_CAN_GetError(&hcan1) &
+                             (mailbox_errors[0] | mailbox_errors[1] | mailbox_errors[2]);
+  CLEAR_BIT(hcan1.ErrorCode, tx_errors);
+  if (can_tx_error != ERROR_NONE) {
+    return;
+  }
+  for (unsigned i = 0; i < 3; ++i) {
+    if ((tx_errors & mailbox_errors[i]) && attempts[i] != 0) {
+      ++can_tx_failed_attempts;
+      if (attempts[i] > CAN_TX_MAX_RETRIES) {
+        can_tx_error = ERROR_CAN_TX_RETRIES_EXCEEDED;
+      }
+    }
+  }
+  if (CAN1->ESR & CAN_ESR_BOFF) {
+    can_tx_error = ERROR_CAN_BUS_OFF;
+  }
+  if (can_tx_error != ERROR_NONE || current_bridge_state == BRIDGE_STATE_WAITING_FOR_SYNC) {
+    const uint32_t all_mailboxes = CAN_TX_MAILBOX0 | CAN_TX_MAILBOX1 | CAN_TX_MAILBOX2;
+    if (HAL_CAN_IsTxMessagePending(&hcan1, all_mailboxes)) {
+      HAL_CAN_AbortTxRequest(&hcan1, all_mailboxes);
+    }
+    memset(attempts, 0, sizeof(attempts));
+    return;
+  }
+
+  const uint32_t status = CAN1->TSR;
+  for (unsigned i = 0; i < 3; ++i) {
+    // A mailbox can finish after HAL's snapshot. Leave it for the next IRQ.
+    if (!(status & (CAN_TSR_TME0 << i)) || (status & (CAN_TSR_RQCP0 << (8U * i)))) {
+      continue;
+    }
+
+    CAN_TxMailBox_TypeDef *mailbox = &CAN1->sTxMailBox[i];
+    bool retry = attempts[i] != 0 && (tx_errors & mailbox_errors[i]) != 0;
+    if (!retry) {
+      attempts[i] = 0;
+      CANMessage_t frame;
+      if (!CANQpop(&can_tx_queue, &frame)) {
+        continue;
+      }
+      // Address this specific empty mailbox so an unhandled completion in
+      // another mailbox can never be overwritten by the new frame.
+      mailbox->TIR = frame.is_extended ? (frame.id << CAN_TI0R_EXID_Pos) | CAN_TI0R_IDE
+                                       : frame.id << CAN_TI0R_STID_Pos;
+      mailbox->TDTR = frame.dlc;
+      uint32_t data[2];
+      memcpy(data, frame.payload, sizeof(data));
+      mailbox->TDLR = data[0];
+      mailbox->TDHR = data[1];
+    }
+    // A retry uses the identifier, DLC and payload still in this mailbox.
+    ++attempts[i];
+    SET_BIT(mailbox->TIR, CAN_TI0R_TXRQ);
   }
 }
 

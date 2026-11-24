@@ -9,6 +9,7 @@
 #define INC_ERROR_CODES_H_
 
 typedef enum {
+    ERROR_NONE                    = 0,
     // --- TIER 2: RUNTIME CATASTROPHES (Triggers Purge-and-Sync & \BEL) ---
     // Includes software bottlenecks, queue overflows, and protocol/syntax violations
     ERROR_USB_TX_BUFFER_FULL      = 1,  // USB software TX buffer overflowed (Host stall)
@@ -26,7 +27,8 @@ typedef enum {
     // --- TIER 1: INITIALIZATION FATAL FAULTS (Pre-Run / Boot-up) ---
     ERROR_CAN_FILTER_CONFIG       = 10, // CAN filter configuration failed during init
     ERROR_CAN_START               = 11, // CAN peripheral start failed
-    ERROR_CAN_RX_NOTIFICATION     = 12  // CAN RX interrupt registration failed
+    ERROR_CAN_RX_NOTIFICATION     = 12, // CAN RX interrupt registration failed
+    ERROR_CAN_BUS_OFF             = 13  // CAN controller entered bus-off during TX
 } ErrorCode_t;
 
 typedef enum {
@@ -35,7 +37,18 @@ typedef enum {
     WARN_USB_PMA_OVERRUN         = 1,  // USB packet memory hiccup handled by driver
     WARN_CAN_READ_FAILED         = 2,  // Low-level read error from mailbox
     WARN_CAN_INVALID_DLC         = 3,  // Corrupted CAN frame received from bus with DLC > 8 (dropped)
-    WARN_CAN_RX_BUFFER_FULL      = 4   // CAN software RX queue overflowed
+    WARN_CAN_RX_BUFFER_FULL      = 4,  // CAN software RX queue overflowed
+    WARN_CAN_TX_FAILED,
+    WARN_CAN_ARBITRATION_LOST,
+    WARN_CAN_ACK,
+    WARN_CAN_CRC,
+    WARN_CAN_STUFF,
+    WARN_CAN_FORM,
+    WARN_CAN_BIT_RECESSIVE,
+    WARN_CAN_BIT_DOMINANT,
+    WARN_CAN_ERROR_WARNING,
+    WARN_CAN_ERROR_PASSIVE,
+    WARN_CAN_BUS_OFF
 } WarningCode_t;
 
 #endif /* INC_ERROR_CODES_H_ */

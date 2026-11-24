@@ -6,6 +6,7 @@
  */
 
 #include <can_translator.h>
+#include "stm32l4xx.h"
 
 
 #define NUM_OF_BITS_IN_HEX 		4U
@@ -137,6 +138,7 @@ bool SLCANToCAN(CircularBuffer_t* cb, CANQueue_t* canq, uint16_t* frames_queued)
 			}
 
 			(*frames_queued)++;
+			NVIC_SetPendingIRQ(CAN1_TX_IRQn);
 
 			index = 0;
 
