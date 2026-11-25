@@ -52,6 +52,28 @@ const char* GetWarningMessage(WarningCode_t code) {
             return "[WARN: CAN_INVALID_DLC]";
         case WARN_CAN_RX_BUFFER_FULL:
             return "[WARN: CAN_RX_FULL]";
+        case WARN_CAN_TX_FAILED:
+            return "[WARN: CAN_TX_FAILED]";
+        case WARN_CAN_ARBITRATION_LOST:
+            return "[WARN: CAN_ARBITRATION_LOST]";
+        case WARN_CAN_ACK:
+            return "[WARN: CAN_ACK]";
+        case WARN_CAN_CRC:
+            return "[WARN: CAN_CRC]";
+        case WARN_CAN_STUFF:
+            return "[WARN: CAN_STUFF]";
+        case WARN_CAN_FORM:
+            return "[WARN: CAN_FORM]";
+        case WARN_CAN_BIT_RECESSIVE:
+            return "[WARN: CAN_BIT_RECESSIVE]";
+        case WARN_CAN_BIT_DOMINANT:
+            return "[WARN: CAN_BIT_DOMINANT]";
+        case WARN_CAN_ERROR_WARNING:
+            return "[WARN: CAN_ERROR_WARNING]";
+        case WARN_CAN_ERROR_PASSIVE:
+            return "[WARN: CAN_ERROR_PASSIVE]";
+        case WARN_CAN_BUS_OFF:
+            return "[WARN: CAN_BUS_OFF]";
         default:
             return "[WARN: UNKNOWN]";
     }

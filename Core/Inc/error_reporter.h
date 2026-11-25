@@ -8,8 +8,6 @@
 #ifndef INC_ERROR_REPORTER_H_
 #define INC_ERROR_REPORTER_H_
 
-#define WARNING_MAX_COUNT 3U
-
 #include "error_codes.h"
 #include <string.h>
 #include <circular_buffer.h>

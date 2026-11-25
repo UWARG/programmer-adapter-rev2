@@ -35,7 +35,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define CAN_TX_MAX_RETRIES 1U
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -61,7 +61,6 @@ CircularBuffer_t usb_tx_buffer;
 static CANMessage_t can_tx_storage[128];
 CANQueue_t can_tx_queue;
 volatile ErrorCode_t can_tx_error = ERROR_NONE;
-volatile uint32_t can_tx_failed_attempts;
 static CANMessage_t can_rx_storage[128];
 CANQueue_t can_rx_queue;
 
@@ -141,7 +140,8 @@ int main(void)
     report_tier1_fatal(ERROR_CAN_START);
   }
 
-  if (HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING |
+  if (HAL_CAN_ActivateNotification(&hcan1, CAN_IT_TX_MAILBOX_EMPTY |
+                                         CAN_IT_RX_FIFO0_MSG_PENDING |
                                          CAN_IT_RX_FIFO0_OVERRUN) != HAL_OK) {
     report_tier1_fatal(ERROR_CAN_RX_NOTIFICATION);
   }
@@ -456,103 +456,6 @@ void usb_tx_push_error(CircularBuffer_t* cb, const char* error_mssg, uint16_t ma
   __set_PRIMASK(primask);
 }
 
-
-void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
-  int pending = HAL_CAN_GetRxFifoFillLevel(hcan, CAN_RX_FIFO0);
-  bool pushed = true;
-
-  for (int i = 0; i < pending; i++){
-    CAN_RxHeaderTypeDef header;
-    CANMessage_t message = {0};
-    if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &header, message.payload) != HAL_OK) {
-        report_warning(WARN_CAN_READ_FAILED);
-    }
-    message.is_extended = (header.IDE == CAN_ID_EXT);
-    message.id = message.is_extended ? header.ExtId : header.StdId;
-    message.dlc = header.DLC;
-
-    if (header.RTR == CAN_RTR_DATA)
-      pushed = CANQpush(&can_rx_queue, message);
-
-    if (!pushed) {
-        report_warning(WARN_CAN_RX_BUFFER_FULL);
-    }
-  }
-}
-
-// Call after HAL_CAN_IRQHandler in CAN1 TX, RX0 and SCE, at equal preemption priority.
-// Pend CAN1_TX_IRQn after enqueueing to start transmission on an idle bus.
-void can_tx_to_peripheral(void) {
-  static uint8_t attempts[3];
-  static const uint32_t mailbox_errors[3] = {
-    HAL_CAN_ERROR_TX_TERR0 | HAL_CAN_ERROR_TX_ALST0,
-    HAL_CAN_ERROR_TX_TERR1 | HAL_CAN_ERROR_TX_ALST1,
-    HAL_CAN_ERROR_TX_TERR2 | HAL_CAN_ERROR_TX_ALST2
-  };
-  // HAL caches completed mailbox errors. Consume just the TX bits once per pass.
-  const uint32_t tx_errors = HAL_CAN_GetError(&hcan1) &
-                             (mailbox_errors[0] | mailbox_errors[1] | mailbox_errors[2]);
-  CLEAR_BIT(hcan1.ErrorCode, tx_errors);
-  if (can_tx_error != ERROR_NONE) {
-    return;
-  }
-  for (unsigned i = 0; i < 3; ++i) {
-    if ((tx_errors & mailbox_errors[i]) && attempts[i] != 0) {
-      ++can_tx_failed_attempts;
-      if (attempts[i] > CAN_TX_MAX_RETRIES) {
-        can_tx_error = ERROR_CAN_TX_RETRIES_EXCEEDED;
-      }
-    }
-  }
-  if (CAN1->ESR & CAN_ESR_BOFF) {
-    can_tx_error = ERROR_CAN_BUS_OFF;
-  }
-  if (can_tx_error != ERROR_NONE || current_bridge_state == BRIDGE_STATE_WAITING_FOR_SYNC) {
-    const uint32_t all_mailboxes = CAN_TX_MAILBOX0 | CAN_TX_MAILBOX1 | CAN_TX_MAILBOX2;
-    if (HAL_CAN_IsTxMessagePending(&hcan1, all_mailboxes)) {
-      HAL_CAN_AbortTxRequest(&hcan1, all_mailboxes);
-    }
-    memset(attempts, 0, sizeof(attempts));
-    return;
-  }
-
-  const uint32_t status = CAN1->TSR;
-  for (unsigned i = 0; i < 3; ++i) {
-    // A mailbox can finish after HAL's snapshot. Leave it for the next IRQ.
-    if (!(status & (CAN_TSR_TME0 << i)) || (status & (CAN_TSR_RQCP0 << (8U * i)))) {
-      continue;
-    }
-
-    CAN_TxMailBox_TypeDef *mailbox = &CAN1->sTxMailBox[i];
-    bool retry = attempts[i] != 0 && (tx_errors & mailbox_errors[i]) != 0;
-    if (!retry) {
-      attempts[i] = 0;
-      CANMessage_t frame;
-      if (!CANQpop(&can_tx_queue, &frame)) {
-        continue;
-      }
-      // Address this specific empty mailbox so an unhandled completion in
-      // another mailbox can never be overwritten by the new frame.
-      mailbox->TIR = frame.is_extended ? (frame.id << CAN_TI0R_EXID_Pos) | CAN_TI0R_IDE
-                                       : frame.id << CAN_TI0R_STID_Pos;
-      mailbox->TDTR = frame.dlc;
-      uint32_t data[2];
-      memcpy(data, frame.payload, sizeof(data));
-      mailbox->TDLR = data[0];
-      mailbox->TDHR = data[1];
-    }
-    // A retry uses the identifier, DLC and payload still in this mailbox.
-    ++attempts[i];
-    SET_BIT(mailbox->TIR, CAN_TI0R_TXRQ);
-  }
-}
-
-void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan) {
-  if (hcan->Instance == CAN1 &&
-      (HAL_CAN_GetError(hcan) & HAL_CAN_ERROR_RX_FOV0) != 0U) {
-      report_warning(WARN_CAN_HW_OVERFLOW);
-  }
-}
 /* USER CODE END 4 */
 
 /**

@@ -22,6 +22,7 @@
 #include "stm32l4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "can_rx_tx_handler.h"
 #include "error_reporter.h"
 #include "error_codes.h"
 #include "usbd_cdc_if.h"

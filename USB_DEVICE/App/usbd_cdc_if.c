@@ -269,7 +269,7 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
   for (uint32_t i = 0; i < *Len && pushed; i++) {
     pushed = CBpush(&usb_rx_buffer, Buf[i]);
     if (!pushed){
-    	report_tier2_runtime(ERROR_USB_RX_BUFFER_FULL);
+      report_tier2_runtime(ERROR_USB_RX_BUFFER_FULL);
     }
   }
 
