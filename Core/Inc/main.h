@@ -55,7 +55,6 @@ void Error_Handler(void);
 /* USER CODE BEGIN EFP */
 /* TX pauses on a terminal error. The caller can clear it after recovery. */
 extern volatile ErrorCode_t can_tx_error;
-void can_tx_to_peripheral(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
