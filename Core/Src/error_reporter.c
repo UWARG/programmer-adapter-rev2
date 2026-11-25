@@ -78,19 +78,22 @@ void handle_diagnostic_request(void) {
 void report_tier1_fatal(ErrorCode_t error_code) {
     CAN_SafeShutdown();
 
+    USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef *)hUsbDeviceFS.pClassData;
+
     const char* error_mssg = GetErrorMessage(error_code);
     usb_tx_push_error(&usb_tx_buffer, error_mssg, strlen(error_mssg));
 
     uint32_t safety_timeout = 2000000; // Generous fallback counter (e.g., ~100-200ms)
     
-    while (safety_timeout > 0) {
+    while (safety_timeout > 0U) {
         bool sw_buffer_empty = CBIsEmpty(&usb_tx_buffer);
-        bool hw_idle = (hcdc->TxState == 0);
+        bool hw_idle = (hcdc->TxState == 0U);
 
         if (sw_buffer_empty && hw_idle) {
             break;
         }
 
+        hcdc = (USBD_CDC_HandleTypeDef *)hUsbDeviceFS.pClassData;
         safety_timeout--;
     }
 

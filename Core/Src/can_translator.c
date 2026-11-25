@@ -31,7 +31,6 @@ void hexToChar(uint8_t hex, char* out_val) {
 	assert(hex <= 0xF);
 
 	*out_val = hexToCharLUT[hex];
-	return true;
 }
 
 bool SLCANToCAN(CircularBuffer_t* cb, CANQueue_t* canq, uint16_t* frames_queued) {

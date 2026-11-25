@@ -15,11 +15,18 @@
 #include <circular_buffer.h>
 #include <can_queue.h>
 #include "usbd_cdc_if.h"
+#include "usb_device.h"
+
+typedef enum {
+    BRIDGE_STATE_NORMAL = 0,
+    BRIDGE_STATE_WAITING_FOR_SYNC
+} BridgeState_t;
 
 extern void CAN_SafeShutdown(void);
 extern void usb_tx_push_error(CircularBuffer_t* cb, const char* error_mssg, uint16_t max_length);
 
-extern BridgeState_t current_bridge_state;
+extern USBD_HandleTypeDef hUsbDeviceFS;
+extern volatile BridgeState_t current_bridge_state;
 extern USBD_CDC_HandleTypeDef *hcdc;
 extern CircularBuffer_t usb_rx_buffer;
 extern CircularBuffer_t usb_tx_buffer;

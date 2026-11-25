@@ -31,10 +31,6 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-typedef enum {
-    BRIDGE_STATE_NORMAL = 0,
-    BRIDGE_STATE_WAITING_FOR_SYNC
-} BridgeState_t;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -155,7 +151,6 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* USER CODE END WHILE */
     if (current_bridge_state == BRIDGE_STATE_WAITING_FOR_SYNC) {
       uint8_t rx_byte;
       if (CBpop(&usb_rx_buffer, &rx_byte)) {
@@ -164,9 +159,21 @@ int main(void)
         }
       }
     } else {
-      // Process CAN queue -> USB TX
-      // Process USB RX -> CAN queue
+      uint16_t frames_queued = 0U;
+      if (SLCANToCAN(&usb_rx_buffer, &can_tx_queue, &frames_queued)) {
+        for (uint16_t i = 0U; i < frames_queued; i++) {
+          if (!usb_tx_push(&usb_tx_buffer, "\r", 1U)) {
+            report_tier2_runtime(ERROR_USB_TX_BUFFER_FULL);
+            break;
+          }
+        }
+      }
+
+      if (current_bridge_state == BRIDGE_STATE_NORMAL) {
+        CANToSLCAN(&usb_tx_buffer, &can_rx_queue);
+      }
     }
+    /* USER CODE END WHILE */
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
