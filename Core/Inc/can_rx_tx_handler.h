@@ -7,6 +7,7 @@
 extern "C" {
 #endif
 
+void CAN_SafeShutdown(void);
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan);
 void can_tx_to_peripheral(void);
 

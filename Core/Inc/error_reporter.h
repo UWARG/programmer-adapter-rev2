@@ -12,6 +12,7 @@
 #include <string.h>
 #include <circular_buffer.h>
 #include <can_queue.h>
+#include <can_rx_tx_handler.h>
 #include "usbd_cdc_if.h"
 #include "usb_device.h"
 
@@ -21,7 +22,6 @@ typedef enum {
 } BridgeState_t;
 
 extern void CAN_SafeShutdown(void);
-extern void usb_tx_push_error(CircularBuffer_t* cb, const char* error_mssg, uint16_t max_length);
 
 extern USBD_HandleTypeDef hUsbDeviceFS;
 extern volatile BridgeState_t current_bridge_state;
@@ -31,9 +31,9 @@ extern CircularBuffer_t usb_tx_buffer;
 extern CANQueue_t can_tx_queue;
 extern CANQueue_t can_rx_queue;
 
-const char* GetErrorMessage(ErrorCode_t code);
+const char* getErrorMessage(ErrorCode_t code);
 
-const char* GetWarningMessage(WarningCode_t code);
+const char* getWarningMessage(WarningCode_t code);
 
 void handle_diagnostic_request(void);
 

@@ -5,9 +5,14 @@
 #include "main.h"
 #include <string.h>
 
-#define CAN_TX_MAX_RETRIES 1U
+#define CAN_TX_MAX_ATTEMPTS 2U
 
 extern CAN_HandleTypeDef hcan1;
+
+void CAN_SafeShutdown(void) {
+  HAL_CAN_Stop(&hcan1);
+  HAL_CAN_DeInit(&hcan1);
+}
 
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
   int pending = HAL_CAN_GetRxFifoFillLevel(hcan, CAN_RX_FIFO0);
@@ -90,7 +95,7 @@ void can_tx_to_peripheral(void) {
                                         HAL_CAN_ERROR_TX_ALST2;
       const WarningCode_t warning = (cause & arbitration_lost) ? WARN_CAN_ARBITRATION_LOST : WARN_CAN_TX_FAILED;
       report_warning(warning);
-      if (!tx_stopped && attempts[i] > CAN_TX_MAX_RETRIES) {
+      if (!tx_stopped && attempts[i] >= CAN_TX_MAX_ATTEMPTS) {
         can_tx_error = ERROR_CAN_TX_RETRIES_EXCEEDED;
       }
     }

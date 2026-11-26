@@ -22,9 +22,6 @@
 #include "usbd_cdc_if.h"
 
 /* USER CODE BEGIN INCLUDE */
-#include "circular_buffer.h"
-#include "error_reporter.h"
-#include "error_codes.h"
 
 /* USER CODE END INCLUDE */
 
@@ -349,6 +346,34 @@ void usb_tx_to_host(void) {
       usb_tx_buffer.tail = (tail + length) & (usb_tx_buffer.capacity - 1U);
     }
   }
+  __set_PRIMASK(primask);
+}
+
+bool usb_tx_push(CircularBuffer_t* cb, const char* conf_mssg, uint16_t max_length){
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq(); // Protect head/tail pointers from race conditions
+
+    for (uint16_t i = 0; i < max_length && conf_mssg[i] != '\0'; i++) {
+        if (!CBpush(cb, (uint8_t)conf_mssg[i])) {
+            __set_PRIMASK(primask);
+            return false; 
+        }
+        if (i == 0U && cb == &usb_tx_buffer) {
+            NVIC_SetPendingIRQ(USB_IRQn);
+        }
+    }
+
+    __set_PRIMASK(primask);
+    return true;
+}
+
+void usb_tx_push_error(CircularBuffer_t* cb, const char* error_mssg, uint16_t max_length) {
+  uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+
+  CBreset(cb);
+  (void)usb_tx_push(cb, error_mssg, max_length);
+
   __set_PRIMASK(primask);
 }
 

@@ -74,9 +74,6 @@ static void MX_CAN1_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
-void CAN_SafeShutdown(void);
-bool usb_tx_push(CircularBuffer_t* cb, const char* conf_mssg, uint16_t max_length);
-void usb_tx_push_error(CircularBuffer_t* cb, const char* error_mssg, uint16_t max_length);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -423,39 +420,6 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void CAN_SafeShutdown(void) {
-  HAL_CAN_Stop(&hcan1);
-  HAL_CAN_DeInit(&hcan1);
-}
-
-bool usb_tx_push(CircularBuffer_t* cb, const char* conf_mssg, uint16_t max_length){
-    uint32_t primask = __get_PRIMASK();
-    __disable_irq(); // Protect head/tail pointers from race conditions
-
-    for (uint16_t i = 0; i < max_length && conf_mssg[i] != '\0'; i++) {
-        if (!CBpush(cb, (uint8_t)conf_mssg[i])) {
-            __set_PRIMASK(primask);
-            return false; 
-        }
-        if (i == 0U && cb == &usb_tx_buffer) {
-            NVIC_SetPendingIRQ(USB_IRQn);
-        }
-    }
-
-    __set_PRIMASK(primask);
-    return true;
-}
-
-void usb_tx_push_error(CircularBuffer_t* cb, const char* error_mssg, uint16_t max_length) {
-  uint32_t primask = __get_PRIMASK();
-  __disable_irq();
-
-  CBreset(cb);
-  (void)usb_tx_push(cb, error_mssg, max_length);
-
-  __set_PRIMASK(primask);
-}
-
 /* USER CODE END 4 */
 
 /**
