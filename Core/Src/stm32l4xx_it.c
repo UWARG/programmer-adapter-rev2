@@ -22,8 +22,10 @@
 #include "stm32l4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "can_rx_tx_handler.h"
 #include "error_reporter.h"
 #include "error_codes.h"
+#include "usbd_cdc_if.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -211,7 +213,7 @@ void CAN1_TX_IRQHandler(void)
   /* USER CODE END CAN1_TX_IRQn 0 */
   HAL_CAN_IRQHandler(&hcan1);
   /* USER CODE BEGIN CAN1_TX_IRQn 1 */
-
+  can_tx_to_peripheral();
   /* USER CODE END CAN1_TX_IRQn 1 */
 }
 
@@ -225,7 +227,7 @@ void CAN1_RX0_IRQHandler(void)
   /* USER CODE END CAN1_RX0_IRQn 0 */
   HAL_CAN_IRQHandler(&hcan1);
   /* USER CODE BEGIN CAN1_RX0_IRQn 1 */
-
+  can_tx_to_peripheral();
   /* USER CODE END CAN1_RX0_IRQn 1 */
 }
 
@@ -239,7 +241,7 @@ void CAN1_SCE_IRQHandler(void)
   /* USER CODE END CAN1_SCE_IRQn 0 */
   HAL_CAN_IRQHandler(&hcan1);
   /* USER CODE BEGIN CAN1_SCE_IRQn 1 */
-
+  can_tx_to_peripheral();
   /* USER CODE END CAN1_SCE_IRQn 1 */
 }
 
@@ -256,7 +258,7 @@ void USB_IRQHandler(void)
   /* USER CODE END USB_IRQn 0 */
   HAL_PCD_IRQHandler(&hpcd_USB_FS);
   /* USER CODE BEGIN USB_IRQn 1 */
-
+  usb_tx_to_host();
   /* USER CODE END USB_IRQn 1 */
 }
 

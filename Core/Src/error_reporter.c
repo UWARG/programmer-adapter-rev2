@@ -2,7 +2,7 @@
 
 static volatile uint32_t warning_counts[WARNING_MAX_COUNT] = {0};
 
-const char* GetErrorMessage(ErrorCode_t code) {
+const char* getErrorMessage(ErrorCode_t code) {
     switch (code) {
         // --- Tier 2: Runtime Error ---
         case ERROR_USB_TX_BUFFER_FULL:
@@ -40,7 +40,7 @@ const char* GetErrorMessage(ErrorCode_t code) {
     }
 }
 
-const char* GetWarningMessage(WarningCode_t code) {
+const char* getWarningMessage(WarningCode_t code) {
     switch (code) {
         case WARN_CAN_HW_OVERFLOW:
             return "[WARN: CAN_HW_OVERFLOW]";
@@ -52,45 +52,76 @@ const char* GetWarningMessage(WarningCode_t code) {
             return "[WARN: CAN_INVALID_DLC]";
         case WARN_CAN_RX_BUFFER_FULL:
             return "[WARN: CAN_RX_FULL]";
+        case WARN_CAN_TX_FAILED:
+            return "[WARN: CAN_TX_FAILED]";
+        case WARN_CAN_ARBITRATION_LOST:
+            return "[WARN: CAN_ARBITRATION_LOST]";
+        case WARN_CAN_ACK:
+            return "[WARN: CAN_ACK]";
+        case WARN_CAN_CRC:
+            return "[WARN: CAN_CRC]";
+        case WARN_CAN_STUFF:
+            return "[WARN: CAN_STUFF]";
+        case WARN_CAN_FORM:
+            return "[WARN: CAN_FORM]";
+        case WARN_CAN_BIT_RECESSIVE:
+            return "[WARN: CAN_BIT_RECESSIVE]";
+        case WARN_CAN_BIT_DOMINANT:
+            return "[WARN: CAN_BIT_DOMINANT]";
+        case WARN_CAN_ERROR_WARNING:
+            return "[WARN: CAN_ERROR_WARNING]";
+        case WARN_CAN_ERROR_PASSIVE:
+            return "[WARN: CAN_ERROR_PASSIVE]";
+        case WARN_CAN_BUS_OFF:
+            return "[WARN: CAN_BUS_OFF]";
         default:
             return "[WARN: UNKNOWN]";
     }
 }
 
 void handle_diagnostic_request(void) {
-    char report[256];
-    
-    int len = snprintf(report, sizeof(report), 
-        "--- BRIDGE WARNING STATS ---\r\n"
-        "%s - Count: %lu\r\n"
-        "%s - Count: %lu\r\n"
-        "%s - Count: %lu\r\n",
-        GetWarningMessage(WARN_CAN_HW_OVERFLOW), warning_counts[WARN_CAN_HW_OVERFLOW],
-        GetWarningMessage(WARN_USB_PMA_OVERRUN), warning_counts[WARN_USB_PMA_OVERRUN],
-        GetWarningMessage(WARN_CAN_READ_FAILED), warning_counts[WARN_CAN_READ_FAILED]
-    );
+    static char line[96];
 
-    if (len > 0 && len < sizeof(report)) {
-        usb_tx_push(&usb_tx_buffer, report, (uint16_t)len);
+    const char* header = "--- BRIDGE WARNING STATS ---\r\n";
+    if (!usb_tx_push(&usb_tx_buffer, header, (uint16_t)__builtin_strlen(header))) {
+        return;
+    }
+
+    for (uint16_t i = 0U; i < WARNING_MAX_COUNT; i++) {
+        WarningCode_t code = (WarningCode_t)i;
+        uint32_t count = warning_counts[i];
+
+        int len = snprintf(line, sizeof(line), "%s - Count: %lu\r\n",
+                           getWarningMessage(code), (unsigned long)count);
+
+        if (len > 0 && len < (int)sizeof(line)) {
+            if (!usb_tx_push(&usb_tx_buffer, line, (uint16_t)len)) {
+                report_tier2_runtime(ERROR_USB_TX_BUFFER_FULL);
+                break;
+            }
+        }
     }
 }
 
 void report_tier1_fatal(ErrorCode_t error_code) {
     CAN_SafeShutdown();
 
-    const char* error_mssg = GetErrorMessage(error_code);
+    USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef *)hUsbDeviceFS.pClassData;
+
+    const char* error_mssg = getErrorMessage(error_code);
     usb_tx_push_error(&usb_tx_buffer, error_mssg, strlen(error_mssg));
 
     uint32_t safety_timeout = 2000000; // Generous fallback counter (e.g., ~100-200ms)
     
-    while (safety_timeout > 0) {
+    while (safety_timeout > 0U) {
         bool sw_buffer_empty = CBIsEmpty(&usb_tx_buffer);
-        bool hw_idle = (hcdc->TxState == 0);
+        bool hw_idle = (hcdc->TxState == 0U);
 
         if (sw_buffer_empty && hw_idle) {
             break;
         }
 
+        hcdc = (USBD_CDC_HandleTypeDef *)hUsbDeviceFS.pClassData;
         safety_timeout--;
     }
 
@@ -106,7 +137,7 @@ void report_tier1_fatal(ErrorCode_t error_code) {
 }
 
 void report_tier2_runtime(ErrorCode_t error_code) {
-    const char* error_mssg = GetErrorMessage(error_code);
+    const char* error_mssg = getErrorMessage(error_code);
     usb_tx_push_error(&usb_tx_buffer, error_mssg, strlen(error_mssg));
 
     CBreset(&usb_rx_buffer);

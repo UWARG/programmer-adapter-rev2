@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <assert.h>
+#include "stm32l4xx.h"
 
 
 typedef struct {

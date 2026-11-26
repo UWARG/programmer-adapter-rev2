@@ -31,7 +31,7 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "error_codes.h"
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
@@ -53,7 +53,8 @@ extern "C" {
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
-
+/* TX pauses on a terminal error. The caller can clear it after recovery. */
+extern volatile ErrorCode_t can_tx_error;
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/

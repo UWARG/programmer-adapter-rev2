@@ -31,10 +31,6 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-typedef enum {
-    BRIDGE_STATE_NORMAL = 0,
-    BRIDGE_STATE_WAITING_FOR_SYNC
-} BridgeState_t;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -57,8 +53,6 @@ I2C_HandleTypeDef hi2c2;
 /* USER CODE BEGIN PV */
 volatile BridgeState_t current_bridge_state = BRIDGE_STATE_NORMAL;
 
-extern USBD_HandleTypeDef hUsbDeviceFS;
-
 static uint8_t usb_rx_storage[512];
 CircularBuffer_t usb_rx_buffer;
 static uint8_t usb_tx_storage[1024];
@@ -66,6 +60,7 @@ CircularBuffer_t usb_tx_buffer;
 
 static CANMessage_t can_tx_storage[128];
 CANQueue_t can_tx_queue;
+volatile ErrorCode_t can_tx_error = ERROR_NONE;
 static CANMessage_t can_rx_storage[128];
 CANQueue_t can_rx_queue;
 
@@ -79,11 +74,6 @@ static void MX_CAN1_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
-void CAN_SafeShutdown(void);
-bool usb_tx_push(CircularBuffer_t* cb, const char* conf_mssg, uint16_t max_length);
-void usb_tx_push_error(CircularBuffer_t* cb, const char* error_mssg, uint16_t max_length);
-void can_tx_to_peripheral(void);
-void usb_tx_to_host(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -147,20 +137,17 @@ int main(void)
     report_tier1_fatal(ERROR_CAN_START);
   }
 
-  if (HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING |
+  if (HAL_CAN_ActivateNotification(&hcan1, CAN_IT_TX_MAILBOX_EMPTY |
+                                         CAN_IT_RX_FIFO0_MSG_PENDING |
                                          CAN_IT_RX_FIFO0_OVERRUN) != HAL_OK) {
     report_tier1_fatal(ERROR_CAN_RX_NOTIFICATION);
   }
-
-  // TX completion is polled below; HAL must leave its result flags intact.
-  __HAL_CAN_DISABLE_IT(&hcan1, CAN_IT_TX_MAILBOX_EMPTY);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* USER CODE END WHILE */
     if (current_bridge_state == BRIDGE_STATE_WAITING_FOR_SYNC) {
       uint8_t rx_byte;
       if (CBpop(&usb_rx_buffer, &rx_byte)) {
@@ -169,9 +156,21 @@ int main(void)
         }
       }
     } else {
-      // Process CAN queue -> USB TX
-      // Process USB RX -> CAN queue
+      uint16_t frames_queued = 0U;
+      if (SLCANToCAN(&usb_rx_buffer, &can_tx_queue, &frames_queued)) {
+        for (uint16_t i = 0U; i < frames_queued; i++) {
+          if (!usb_tx_push(&usb_tx_buffer, "\r", 1U)) {
+            report_tier2_runtime(ERROR_USB_TX_BUFFER_FULL);
+            break;
+          }
+        }
+      }
+
+      if (current_bridge_state == BRIDGE_STATE_NORMAL) {
+        CANToSLCAN(&usb_tx_buffer, &can_rx_queue);
+      }
     }
+    /* USER CODE END WHILE */
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -421,204 +420,6 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void CAN_SafeShutdown(void) {
-  HAL_CAN_Stop(&hcan1);
-  HAL_CAN_DeInit(&hcan1);
-}
-
-bool usb_tx_push(CircularBuffer_t* cb, const char* conf_mssg, uint16_t max_length){
-    uint32_t primask = __get_PRIMASK();
-    __disable_irq(); // Protect head/tail pointers from race conditions
-
-    for (uint16_t i = 0; i < max_length && conf_mssg[i] != '\0'; i++) {
-        if (!CBpush(cb, (uint8_t)conf_mssg[i])) {
-            __set_PRIMASK(primask);
-            return false; 
-        }
-    }
-
-    __set_PRIMASK(primask);
-    return true;
-}
-
-void usb_tx_push_error(CircularBuffer_t* cb, const char* error_mssg, uint16_t max_length) {
-  uint32_t primask = __get_PRIMASK();
-  __disable_irq();
-
-  CBreset(cb);
-
-  for(int i = 0; i < max_length && error_mssg[i] != '\0'; i++) {
-    if(!CBpush(cb, (uint8_t)error_mssg[i])) {
-      __set_PRIMASK(primask);
-
-      return;
-    }
-  }
-
-  __set_PRIMASK(primask);
-}
-
-
-void can_tx_to_peripheral(void) {
-  const uint32_t max_retries = 1; // Adjust this if you want more retries
-  static uint32_t pending_mailbox = 0;
-  static uint32_t retries = 0;
-
-  if (can_tx_queue.head == can_tx_queue.tail) {
-    return;
-  }
-
-  // Send on any mailbox if no ongoing send attempt/cleanup to do
-  if (pending_mailbox == 0) {
-    // if mailbox busy, wait to try on next cycle of main. Not an error
-    if (HAL_CAN_GetTxMailboxesFreeLevel(&hcan1) == 0) {
-      return;
-    }
-
-    CANMessage_t *message = &can_tx_queue.buffer[can_tx_queue.tail];
-    CAN_TxHeaderTypeDef header = {0};
-    header.IDE = message->is_extended ? CAN_ID_EXT : CAN_ID_STD;
-    header.StdId = message->is_extended ? 0 : message->id;
-    header.ExtId = message->is_extended ? message->id : 0;
-    header.RTR = CAN_RTR_DATA;
-    header.DLC = message->dlc;
-    header.TransmitGlobalTime = DISABLE;
-
-    uint32_t mailbox = 0;
-
-    // Happy path where it just sends
-    if (HAL_CAN_AddTxMessage(&hcan1, &header, message->payload, &mailbox) == HAL_OK) {
-      pending_mailbox = mailbox;
-      return;
-    } else {
-      retries++;
-    }
-  }
-  // If pending mailbox hasn't updated check there is an ongoing attempt to check
-  else {
-    // Each mailbox has an eight-bit group of completion/result flags in TSR.
-    uint32_t flag_shift = (pending_mailbox == CAN_TX_MAILBOX0) ? 0 :
-                          (pending_mailbox == CAN_TX_MAILBOX1) ? 8 : 16;
-    uint32_t complete_mask = CAN_TSR_RQCP0 << flag_shift;
-    uint32_t success_mask = CAN_TSR_TXOK0 << flag_shift;
-    uint32_t status = READ_REG(hcan1.Instance->TSR);
-
-    if ((status & complete_mask) == 0) {
-      return; // Still pending. Repeated calls do not consume retries.
-    }
-
-    // Writing only RQCP clears this mailbox's result without affecting others.
-    WRITE_REG(hcan1.Instance->TSR, complete_mask);
-    pending_mailbox = 0;
-
-    if ((status & success_mask) != 0) {
-      CANMessage_t sent;
-      (void)CANQpop(&can_tx_queue, &sent);
-      retries = 0;
-      return;
-    } else {
-      retries++;
-    }
-  }
-
-  // Check if retries exceeded
-  if (retries > max_retries) {
-    report_tier2_runtime(ERROR_CAN_TX_RETRIES_EXCEEDED);
-    return;
-  }
-}
-
-void usb_tx_to_host(void) {
-  const uint32_t max_retries = 1; // Adjust this if you want more retries
-  static bool pending_transfer = false;
-  static uint32_t retries = 0;
-
-  if (usb_tx_buffer.head == usb_tx_buffer.tail) {
-    return;
-  }
-
-  USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef *)hUsbDeviceFS.pClassData;
-
-  // Suspension pauses an ongoing transfer. It is not a failed attempt.
-  if (hUsbDeviceFS.dev_state == USBD_STATE_SUSPENDED) {
-    return;
-  }
-
-  // Start a send if there is no ongoing attempt to check.
-  if (!pending_transfer) {
-    // If USB is unavailable or busy, try on the next cycle in main. Not an error.
-    if (hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED ||
-        hcdc == NULL || hcdc->TxState != 0) {
-      return;
-    }
-
-    // Each circular-buffer entry is one byte. Keep it queued while USB uses it.
-    uint8_t *message = &usb_tx_buffer.buffer[usb_tx_buffer.tail];
-    uint8_t status = CDC_Transmit_FS(message, sizeof(*message));
-
-    if (status == USBD_OK) {
-      pending_transfer = true;
-      return;
-    } else if (status == USBD_BUSY) {
-      return;
-    } else {
-      retries++;
-    }
-  }
-  // Check whether the ongoing transfer completed or USB was deconfigured.
-  else {
-    if (hUsbDeviceFS.dev_state == USBD_STATE_CONFIGURED && hcdc != NULL) {
-      if (hcdc->TxState != 0) {
-        return; // Still pending. Repeated calls do not consume retries.
-      }
-
-      uint8_t sent;
-      (void)CBpop(&usb_tx_buffer, &sent);
-      pending_transfer = false;
-      retries = 0;
-      return;
-    } else {
-      pending_transfer = false;
-      retries++;
-    }
-  }
-
-  // Check if retries exceeded.
-  if (retries > max_retries) {
-    report_tier2_runtime(ERROR_CAN_TX_RETRIES_EXCEEDED); 
-    return;
-  }
-}
-
-void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
-  int pending = HAL_CAN_GetRxFifoFillLevel(hcan, CAN_RX_FIFO0);
-  bool pushed = true;
-
-  for (int i = 0; i < pending; i++){
-    CAN_RxHeaderTypeDef header;
-    CANMessage_t message = {0};
-    if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &header, message.payload) != HAL_OK) {
-        report_warning(WARN_CAN_READ_FAILED);
-    }
-    message.is_extended = (header.IDE == CAN_ID_EXT);
-    message.id = message.is_extended ? header.ExtId : header.StdId;
-    message.dlc = header.DLC;
-
-    if (header.RTR == CAN_RTR_DATA)
-      pushed = CANQpush(&can_rx_queue, message);
-
-    if (!pushed) {
-        report_warning(WARN_CAN_RX_BUFFER_FULL);
-    }
-  }
-}
-
-void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan) {
-  if (hcan->Instance == CAN1 &&
-      (HAL_CAN_GetError(hcan) & HAL_CAN_ERROR_RX_FOV0) != 0U) {
-      report_warning(WARN_CAN_HW_OVERFLOW);
-  }
-}
 /* USER CODE END 4 */
 
 /**

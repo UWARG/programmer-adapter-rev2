@@ -6,6 +6,7 @@
  */
 
 #include <can_translator.h>
+#include "stm32l4xx.h"
 
 
 #define NUM_OF_BITS_IN_HEX 		4U
@@ -30,7 +31,6 @@ void hexToChar(uint8_t hex, char* out_val) {
 	assert(hex <= 0xF);
 
 	*out_val = hexToCharLUT[hex];
-	return true;
 }
 
 bool SLCANToCAN(CircularBuffer_t* cb, CANQueue_t* canq, uint16_t* frames_queued) {
@@ -137,6 +137,7 @@ bool SLCANToCAN(CircularBuffer_t* cb, CANQueue_t* canq, uint16_t* frames_queued)
 			}
 
 			(*frames_queued)++;
+			NVIC_SetPendingIRQ(CAN1_TX_IRQn);
 
 			index = 0;
 
@@ -222,6 +223,9 @@ bool CANToSLCAN(CircularBuffer_t* cb, CANQueue_t* canq) {
 			report_tier2_runtime(ERROR_USB_TX_BUFFER_FULL);
 			return false;
 		}
+        if (cb == &usb_tx_buffer) {
+            NVIC_SetPendingIRQ(USB_IRQn);
+        }
     }
 
     return true;

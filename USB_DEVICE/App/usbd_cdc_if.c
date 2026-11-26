@@ -22,9 +22,6 @@
 #include "usbd_cdc_if.h"
 
 /* USER CODE BEGIN INCLUDE */
-#include "circular_buffer.h"
-#include "error_reporter.h"
-#include "error_codes.h"
 
 /* USER CODE END INCLUDE */
 
@@ -268,10 +265,9 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
   bool pushed = true;
   for (uint32_t i = 0; i < *Len && pushed; i++) {
     pushed = CBpush(&usb_rx_buffer, Buf[i]);
-  }
-
-  if (!pushed){
-    report_tier2_runtime(ERROR_USB_RX_BUFFER_FULL);
+    if (!pushed){
+      report_tier2_runtime(ERROR_USB_RX_BUFFER_FULL);
+    }
   }
 
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
@@ -329,6 +325,57 @@ static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
 }
 
 /* USER CODE BEGIN PRIVATE_FUNCTIONS_IMPLEMENTATION */
+
+/* Called after HAL handles USB events, including IN completion and configuration. */
+void usb_tx_to_host(void) {
+  USBD_CDC_HandleTypeDef *cdc = hUsbDeviceFS.pClassData;
+  if (hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED || cdc == NULL || cdc->TxState != 0U) {
+    return;
+  }
+
+  /* An error producer can reset the ring. Keep the in-flight bytes in USB-owned storage. */
+  uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+  uint32_t head = usb_tx_buffer.head;
+  uint32_t tail = usb_tx_buffer.tail;
+  uint32_t contiguous = (head >= tail ? head : usb_tx_buffer.capacity) - tail;
+  uint16_t length = (uint16_t)MIN(contiguous, CDC_DATA_FS_IN_PACKET_SIZE);
+  if (length != 0U) {
+    memcpy(UserTxBufferFS, &usb_tx_buffer.buffer[tail], length);
+    if (CDC_Transmit_FS(UserTxBufferFS, length) == USBD_OK) {
+      usb_tx_buffer.tail = (tail + length) & (usb_tx_buffer.capacity - 1U);
+    }
+  }
+  __set_PRIMASK(primask);
+}
+
+bool usb_tx_push(CircularBuffer_t* cb, const char* conf_mssg, uint16_t max_length){
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq(); // Protect head/tail pointers from race conditions
+
+    for (uint16_t i = 0; i < max_length && conf_mssg[i] != '\0'; i++) {
+        if (!CBpush(cb, (uint8_t)conf_mssg[i])) {
+            __set_PRIMASK(primask);
+            return false; 
+        }
+        if (i == 0U && cb == &usb_tx_buffer) {
+            NVIC_SetPendingIRQ(USB_IRQn);
+        }
+    }
+
+    __set_PRIMASK(primask);
+    return true;
+}
+
+void usb_tx_push_error(CircularBuffer_t* cb, const char* error_mssg, uint16_t max_length) {
+  uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+
+  CBreset(cb);
+  (void)usb_tx_push(cb, error_mssg, max_length);
+
+  __set_PRIMASK(primask);
+}
 
 /* USER CODE END PRIVATE_FUNCTIONS_IMPLEMENTATION */
 

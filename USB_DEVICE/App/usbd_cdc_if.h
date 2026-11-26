@@ -30,7 +30,7 @@
 #include "usbd_cdc.h"
 
 /* USER CODE BEGIN INCLUDE */
-
+#include "error_reporter.h"
 /* USER CODE END INCLUDE */
 
 /** @addtogroup STM32_USB_OTG_DEVICE_LIBRARY
@@ -108,7 +108,9 @@ extern USBD_CDC_ItfTypeDef USBD_Interface_fops_FS;
 uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len);
 
 /* USER CODE BEGIN EXPORTED_FUNCTIONS */
-
+void usb_tx_to_host(void);
+bool usb_tx_push(CircularBuffer_t* cb, const char* conf_mssg, uint16_t max_length);
+void usb_tx_push_error(CircularBuffer_t* cb, const char* error_mssg, uint16_t max_length);
 /* USER CODE END EXPORTED_FUNCTIONS */
 
 /**
